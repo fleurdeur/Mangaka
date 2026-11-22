@@ -1,0 +1,25 @@
+name: Source or parser issue
+description: A source is broken, slow or returns wrong data
+labels: [source]
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Source name
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong?
+      description: Do not paste copyrighted page content.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I tried another network (Wi-Fi/mobile).
+        - label: The source works in a browser.
+        - label: I did not attach cookies or tokens.

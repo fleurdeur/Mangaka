@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kurenai</string>
+    <string name="app_tagline">A cozy, cinematic reader for every story</string>
+    <string name="widget_description">Continue reading your latest chapter</string>
+</resources>
