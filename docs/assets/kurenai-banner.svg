@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="Kurenai by Mangaka">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1114"/>
+      <stop offset="0.55" stop-color="#2a1c1f"/>
+      <stop offset="1" stop-color="#3a2026"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.18" r="0.55">
+      <stop offset="0" stop-color="#e23d4f" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e23d4f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e23d4f"/>
+      <stop offset="1" stop-color="#ffd27a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <rect width="1200" height="420" fill="url(#glow)"/>
+  <g opacity="0.16" stroke="#fff4ed" stroke-width="1">
+    <path d="M760 0v420M860 0v420M960 0v420M1060 0v420"/>
+    <path d="M700 90h500M700 180h500M700 270h500M700 360h500"/>
+  </g>
+  <g transform="translate(92 96)">
+    <rect x="0" y="0" width="52" height="52" rx="16" fill="#e23d4f"/>
+    <path d="M12 13h7v10l9-10h8L24 25l12 15h-8L19 29v11h-7z" fill="#fff4ed"/>
+    <text x="76" y="38" font-family="Inter, Segoe UI, sans-serif" font-size="24" font-weight="700" letter-spacing="7" fill="#ffd27a">MANGAKA</text>
+  </g>
+  <text x="92" y="258" font-family="Inter, Segoe UI, sans-serif" font-size="92" font-weight="800" letter-spacing="-3" fill="#fff4ed">Kurenai</text>
+  <text x="92" y="306" font-family="Inter, Segoe UI, sans-serif" font-size="22" fill="#d8c7bc">A cozy, cinematic reader for manga, manhwa, manhua, webtoons and light novels.</text>
+  <rect x="92" y="338" width="196" height="4" rx="2" fill="url(#stroke)"/>
+</svg>

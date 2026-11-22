@@ -1,8 +1,8 @@
-HSPLapp/kurenai/KurenaiApplication;
-HSPLapp/kurenai/MainActivity;
-HSPLapp/kurenai/ui/KurenaiAppKt;
-HSPLapp/kurenai/core/designsystem/theme/ThemeKt;
-HSPLandroidx/compose/runtime/Recomposer;
-HSPLandroidx/compose/runtime/ComposerImpl;
-HSPLandroidx/activity/ComponentActivity;
-HSPLandroidx/lifecycle/ViewModelStore;
+Lapp/kurenai/KurenaiApplication;
+Lapp/kurenai/MainActivity;
+Lapp/kurenai/ui/KurenaiAppKt;
+Lapp/kurenai/core/designsystem/theme/ThemeKt;
+Landroidx/compose/runtime/Recomposer;
+Landroidx/compose/runtime/ComposerImpl;
+Landroidx/activity/ComponentActivity;
+Landroidx/lifecycle/ViewModelStore;

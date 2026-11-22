@@ -1,97 +1,86 @@
-# Mangaka
+<div align="center">
 
-**Kurenai** is an open-source, native Android reader for manga, manhwa, manhua, webtoons, comics and light novels. It is a spiritual successor to Kotatsu Redo: calm to use, cinematic to look at, and built to stay fast on real devices.
+<img src="./docs/assets/kurenai-banner.svg" alt="Kurenai by Mangaka" width="100%"/>
 
-- Package: `app.kurenai`
-- Language: Kotlin + Jetpack Compose + Material 3 Expressive
-- Minimum Android: 8.0 (API 24)
-- License: GNU GPL v3.0
-- No ads. No analytics. No accounts required.
+**[Mangaka](https://github.com/fleurdeur/Mangaka) is a free and open-source native Android reader for manga, manhwa, manhua, webtoons, comics and light novels. It is the spiritual successor to Kotatsu Redo: cozy to use, cinematic to look at, and built to stay fast on real devices.**
 
-> Kurenai does not host or distribute manga. It is a client that talks to sources you choose. Please support the official releases and follow the laws that apply to you.
+![Android 8.0+](https://img.shields.io/badge/android-8.0%2B-brightgreen)
+[![Build](https://github.com/fleurdeur/Mangaka/actions/workflows/android.yml/badge.svg)](https://github.com/fleurdeur/Mangaka/actions/workflows/android.yml)
+[![Latest release](https://img.shields.io/github/v/release/fleurdeur/Mangaka?color=e23d4f)](https://github.com/fleurdeur/Mangaka/releases)
+[![License](https://img.shields.io/github/license/fleurdeur/Mangaka?color=ffd27a)](https://github.com/fleurdeur/Mangaka/blob/main/LICENSE)
 
-## Highlights
+</div>
 
-### Reading
-- Horizontal paged and vertical webtoon readers with tap zones, volume-key paging, keyboard/gamepad/D-pad navigation and stylus support.
-- Double-page spreads on wide screens, auto-scroll with speed control, e-ink and colour-filter modes, reading light and sleep timer.
-- Per-series reader settings, adaptive prefetch, tiled decoding and a disk cache with a configurable budget.
-- Continue-reading widget, PiP entry point, Wear OS remote hooks and TV/Leanback launcher support.
+### Main Features
 
-### Library & discovery
-- Multi-source search, per-source filters, tags, content kinds and ratings.
-- Favourites, categories, reading history, updates and yearly stats.
-- Local recommendation engine plus cross-source matching by title similarity.
-- Optional "Ask AI" librarian that works locally first; cloud completion uses your own OpenAI-compatible endpoint.
+<div align="left">
 
-### Animated chapters
-The headline experiment turns a chapter page into a short cinematic sequence:
+-   Large online catalogue through the open-source Kotatsu parser ecosystem, with per-source languages, content ratings, health tracking, enable/disable and automatic disabling of repeatedly failing sources
+-   Search one source or all enabled sources at once, by title, author, tag or kind, with native filter sheets and streamed multi-source results
+-   Favourites in custom categories, reading history, bookmarks, incognito mode and a continue-reading widget
+-   Four reading directions: paged left-to-right, paged right-to-left, vertical and continuous Webtoon; double-page spreads on wide screens
+-   Tap zones, volume-key paging, keyboard, gamepad and D-pad navigation, stylus support, auto-scroll, reading light, sleep timer, e-ink and colour-filter modes
+-   Per-series reader settings, adaptive prefetch, tiled decoding and a configurable disk cache
+-   New chapter checks, an updates feed, smart download suggestions and offline chapter downloads through WorkManager
+-   Local recommendations, cross-source title matching and "Alternatives" for moving progress between sources
+-   Tracking with AniList, MyAnimeList, Kitsu and Shikimori; encrypted backup and restore
+-   Network tools: encrypted cookie jar, DNS over HTTPS, HTTP/SOCKS proxy, polite rate limiting, circuit breakers and Cloudflare/WebView challenge handling with a human fallback
+-   On-device OCR and ML Kit translation, plus an optional OpenAI-compatible cloud/local LLM adapter
+-   **Animated chapters (experimental):** panel detection, lightweight character rigs, a director camera plan, real-time OpenGL ES rendering, voice casting, system/offline/neural TTS, karaoke subtitles and a manual editor
+-   Material 3 Expressive design with Inter typography, a coffee/crimson palette, Monet dynamic colour, AMOLED black and cover-adaptive themes
+-   Password or biometric app lock, adult-content gating, no ads, no analytics and no account required
+-   Phones, tablets, foldables, Android TV/Leanback and Wear OS remote hooks
+-   Supports Android 8.0 and newer
 
-1. **Panel detection** finds gutters and reading order, including right-to-left manga.
-2. **Bubble/caption regions** are detected; OCR is provided by on-device ML Kit in the translation feature.
-3. **Lightweight rigs** are generated for detected characters.
-4. A **director** builds push-in, pan, parallax and shake shots that respect reduced-motion and photosensitivity settings.
-5. A **real-time OpenGL ES 2.0 renderer** applies mesh deformation and a cinematic vignette at 60 fps.
-6. **Narration** uses the system TTS engine, optional offline neural packs, or a VoiceStudio adapter, with word timing for karaoke subtitles.
+</div>
 
-The animated pipeline is intentionally local and conservative. It never invents dialogue, and exports are personal-use only. See [docs/ANIMATED_CHAPTERS.md](docs/ANIMATED_CHAPTERS.md) for the exact current state and limitations.
+### Design
 
-### Sources and networking
-- Bundled Kotatsu parsers through JitPack (`com.github.KotatsuApp:kotatsu-parsers`), giving access to the large Kotatsu source catalogue. This library is GPL-3.0; see [docs/SOURCES.md](docs/SOURCES.md).
-- Cloudflare and generic browser challenges are handled with a hidden WebView, an encrypted cookie jar and a human fallback dialog when a site needs interaction.
-- DoH, HTTP/SOCKS proxy, polite per-host rate limiting, circuit breakers and source health tracking with automatic disabling.
-- Encrypted local storage for cookies, tracker tokens and API keys.
+<div align="center">
 
-### Privacy by default
-- No advertising, telemetry or analytics SDKs.
-- Adult content stays hidden until unlocked, optionally behind a PIN/biometric gate.
-- Tracker and cloud keys are opt-in and stored in `EncryptedSharedPreferences`.
-- Network diagnostics are local and redact cookies and authorization headers.
+**Coffee, cream and crimson.** Kurenai uses a warm espresso surface, a crimson accent and a soft gold highlight, with expressive shapes, generous spacing and cinematic gradients. The reader stays out of the way; the library feels like a favourite shelf.
 
-## Module map
+</div>
 
-| Module | Responsibility |
-| --- | --- |
-| `:app` | Application shell, navigation, onboarding, widgets, playback service |
-| `:core:model` | Immutable domain models and settings |
-| `:core:common` | Dispatchers, outcomes, event bus |
-| `:core:database` | Room entities, DAOs, FTS5 search |
-| `:core:datastore` | Preferences DataStore and encrypted secret storage |
-| `:core:network` | OkHttp stack, encrypted cookies, challenge solving, DoH, proxy |
-| `:core:source` | Source contracts, registry and catalogue |
-| `:core:parsers` | Kotatsu parser adapter and bundled source registry |
-| `:core:image` | Coil 3 pipeline, memory/disk budgets |
-| `:core:data` | Repositories, recommendations, downloads, backup, trackers, AI |
-| `:core:designsystem` | Material 3 Expressive theme, colour, type, components |
-| `:feature:library` | Library, history, categories, search |
-| `:feature:browse` | Source browsing and multi-source search |
-| `:feature:details` | Series details, chapters, trackers, related titles |
-| `:feature:reader` | Paged/webtoon reader |
-| `:feature:updates` | Update feed |
-| `:feature:animator` | Panel detection, rigs, director, GL renderer, TTS |
-| `:feature:translation` | OCR, on-device translation, cloud/LLM adapter |
-| `:feature:settings` / `:feature:more` | Settings, sources, diagnostics, downloads, stats |
-| `:benchmark` | Macrobenchmark startup and scroll journeys |
+<div align="left">
 
-Build logic lives in `build-logic/` as convention plugins.
+-   System, light, dark and pure-black AMOLED themes
+-   Material You dynamic colour when the device supports it
+-   Cover-adaptive palette for the details screen
+-   Reduced-motion and photosensitivity-safe options for animated chapters
+-   Large touch targets, visible focus states, TV-safe layouts and gamepad navigation
 
-## Build
+</div>
 
-Requirements: JDK 17+, Android SDK with platform 37, and an internet connection for the first dependency resolution.
+### Animated Chapters
+
+<div align="left">
+
+Kurenai can turn a chapter page into a short cinematic sequence: panels are detected, light rigs are generated, a director adds push-ins, pans and parallax, and a real-time OpenGL ES renderer brings the page to life with narration and karaoke subtitles. It runs on-device, is off by default and respects reduced-motion settings.
+
+The pipeline and its current limitations are documented in [docs/ANIMATED_CHAPTERS.md](docs/ANIMATED_CHAPTERS.md).
+
+</div>
+
+### Contributing
+
+**📌 Pull requests are welcome.** Read [CONTRIBUTING.md](CONTRIBUTING.md) for build steps, code style, source rules and the review checklist. By contributing you agree your work is licensed under GPL-3.0.
+
+-   [Report a bug](https://github.com/fleurdeur/Mangaka/issues/new?template=bug_report.yml)
+-   [Report a source issue](https://github.com/fleurdeur/Mangaka/issues/new?template=source_issue.yml)
+-   [Request a feature](https://github.com/fleurdeur/Mangaka/issues/new?template=feature_request.yml)
+-   Security reports: [SECURITY.md](SECURITY.md) — please do not open a public issue
+
+### Building
 
 ```bash
+# JDK 17+ and Android SDK platform 37
 ./gradlew :app:assembleDebug
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
-Create `local.properties` with your SDK path (never commit it):
-
-```properties
-sdk.dir=/path/to/Android/Sdk
-```
-
-Release builds read `signing.properties` from the repository root:
+For a signed release build, create a local `signing.properties` (never commit it):
 
 ```properties
 storeFile=/absolute/path/to/release.jks
@@ -100,24 +89,36 @@ keyAlias=...
 keyPassword=...
 ```
 
-Neither `local.properties` nor `signing.properties` is tracked. The release build enables R8 full mode, resource shrinking and ABI/resource packaging rules.
-
-Useful checks:
-
 ```bash
-./gradlew :app:lintDebug
-./gradlew test
-./gradlew :benchmark:assembleRelease
+./gradlew :app:assembleRelease
 ```
 
-## Source catalogue
+### Certificate fingerprints
 
-The Kotatsu parser library is pulled from JitPack at the commit pinned in `gradle/libs.versions.toml`. Source metadata is translated into Kurenai's `MangaSource` contract at runtime. Adding a parser means adding it upstream or implementing `MangaSource` in `:core:source`; see [docs/SOURCES.md](docs/SOURCES.md).
+```plaintext
+SHA-256: 20:A6:B9:D6:AD:A0:57:78:7D:E3:20:C5:48:21:E9:CA:D6:CB:81:CE:37:8F:9D:E9:EE:F3:EA:C5:09:E9:E3:4B
+```
 
-## Contributing
+```plaintext
+SHA-1: 3A:86:68:4E:43:AD:5C:F6:19:B1:3B:A4:DD:00:9B:7F:BE:8E:DC:E5
+```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Security issues should follow [SECURITY.md](SECURITY.md), not the public issue tracker.
+### License
 
-## Legal
+[![GNU GPLv3 Image](https://www.gnu.org/graphics/gplv3-127x51.png)](http://www.gnu.org/licenses/gpl-3.0.en.html)
 
-Kurenai is licensed under GPL-3.0. The bundled parser library retains its own GPL-3.0 license and copyright. Kurenai is not affiliated with Kotatsu, Kotatsu Redo, any scanlation group or any publisher. See [docs/DMCA.md](docs/DMCA.md) and [docs/PRIVACY.md](docs/PRIVACY.md).
+<div align="left">
+
+You may copy, distribute and modify the software as long as you track changes/dates in source files. Any modifications to or software including (via compiler) GPL-licensed code must also be made available under the GPL along with build and install instructions.
+
+Kurenai includes the Kotatsu parser library, which is also GPL-3.0. See [docs/SOURCES.md](docs/SOURCES.md) for attribution and source rules.
+
+</div>
+
+### DMCA disclaimer
+
+<div align="left">
+
+The developers of this application do not have any affiliation with the content available in the app and do not store or distribute any content. This application should be considered a web browser; all content that can be found using this application is freely available on the Internet. All DMCA takedown requests should be sent to the owners of the website where the content is hosted. See [docs/DMCA.md](docs/DMCA.md) for the project's takedown process.
+
+</div>
