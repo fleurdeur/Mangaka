@@ -1,6 +1,7 @@
 package app.kurenai.core.datastore
 
 import android.content.Context
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -33,11 +34,23 @@ class DataStoreSettingsStore @Inject constructor(
     private val sourcesKey = stringPreferencesKey("source_preferences_json")
 
     override val settings: Flow<AppSettings> = context.settingsDataStore.data
-        .catch { e -> if (e is IOException) emit(androidx.datastore.preferences.core.emptyPreferences()) else throw e }
+        .catch { e ->
+            if (e is IOException || e is CorruptionException) {
+                emit(androidx.datastore.preferences.core.emptyPreferences())
+            } else {
+                throw e
+            }
+        }
         .map { prefs -> decode(prefs[settingsKey], AppSettings()) }
 
     override val sourcePreferences: Flow<SourcePreferences> = context.settingsDataStore.data
-        .catch { e -> if (e is IOException) emit(androidx.datastore.preferences.core.emptyPreferences()) else throw e }
+        .catch { e ->
+            if (e is IOException || e is CorruptionException) {
+                emit(androidx.datastore.preferences.core.emptyPreferences())
+            } else {
+                throw e
+            }
+        }
         .map { prefs -> decode(prefs[sourcesKey], SourcePreferences()) }
 
     override suspend fun update(transform: (AppSettings) -> AppSettings) {

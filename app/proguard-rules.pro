@@ -1,8 +1,11 @@
 # Kurenai release rules
 
 # Keep source adapters loaded reflectively by the Kotatsu registry.
--keep class org.kotatsu.** { *; }
+-keep class org.koitharu.kotatsu.parsers.** { *; }
+-keep class org.koitharu.kotatsu.parsers.model.** { *; }
+-keepclassmembers enum org.koitharu.kotatsu.parsers.model.MangaParserSource { *; }
 -keep class app.kurenai.core.parsers.** { *; }
+-keep class app.kurenai.core.source.** { *; }
 
 # Kotlinx serialization
 -keepattributes *Annotation*, InnerClasses

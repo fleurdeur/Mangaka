@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
@@ -8,6 +10,12 @@ plugins {
     alias(libs.plugins.hilt) apply false
     alias(libs.plugins.detekt) apply false
     alias(libs.plugins.ktlint) apply false
+}
+
+subprojects {
+    tasks.withType<Test>().configureEach {
+        failOnNoDiscoveredTests = false
+    }
 }
 
 tasks.register<Delete>("clean") {

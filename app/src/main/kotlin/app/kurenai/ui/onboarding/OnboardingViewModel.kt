@@ -12,8 +12,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import javax.inject.Inject
 
@@ -38,7 +40,7 @@ class OnboardingViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val sources = sourceRepository.sources.first()
+            val sources = withContext(Dispatchers.Default) { sourceRepository.sources.first() }
             val language = Locale.getDefault().language.lowercase()
             val preferred = sources.filter { it.language == language }.map { it.language }.toSet().ifEmpty { setOf("en") }
             _state.value = _state.value.copy(sources = sources, selectedLanguages = preferred, systemLanguage = language)

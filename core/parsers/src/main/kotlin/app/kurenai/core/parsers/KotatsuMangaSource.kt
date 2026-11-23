@@ -50,7 +50,9 @@ class KotatsuMangaSource(
             id = "kotatsu:${parserSource.name}",
             name = parserSource.title,
             language = parserSource.locale.ifBlank { "multi" },
-            domain = runCatching { parser.domain }.getOrDefault(""),
+            // Resolved lazily when the parser is first used. Instantiating every
+            // parser here would make the first source list slow and memory-heavy.
+            domain = "",
             kind = parserSource.contentType.toKind(),
             nsfw = parserSource.contentType == KContentType.HENTAI,
             license = SourceLicense.UNKNOWN,

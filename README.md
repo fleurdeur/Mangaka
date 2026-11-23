@@ -78,7 +78,7 @@ The pipeline and its current limitations are documented in [docs/ANIMATED_CHAPTE
 ./gradlew :app:assembleDebug
 ```
 
-The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The debug universal APK is written to `app/build/outputs/apk/debug/app-universal-debug.apk`. ABI-specific debug APKs are written beside it.
 
 For a signed release build, create a local `signing.properties` (never commit it):
 
@@ -92,6 +92,15 @@ keyPassword=...
 ```bash
 ./gradlew :app:assembleRelease
 ```
+
+Release builds produce:
+
+- `app-arm64-v8a-release.apk` — 64-bit ARM phones and tablets
+- `app-armeabi-v7a-release.apk` — 32-bit ARM devices
+- `app-universal-release.apk` — every bundled ABI
+- optional `x86` / `x86_64` APKs for emulators
+
+All are signed with the main release keystore configured in `signing.properties`.
 
 ### Certificate fingerprints
 

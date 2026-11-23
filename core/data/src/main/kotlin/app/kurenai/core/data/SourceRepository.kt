@@ -13,10 +13,13 @@ import app.kurenai.core.model.SourceSort
 import app.kurenai.core.source.MangaSource
 import app.kurenai.core.source.SourceCatalog
 import app.kurenai.core.source.SourceRegistry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,12 +57,12 @@ class SourceRepository @Inject constructor(
                 SourceSort.HEALTH -> compareBy({ it.health.ordinal }, { it.name })
             },
         )
-    }
+    }.flowOn(Dispatchers.Default)
 
-    suspend fun visibleSources(): List<MangaSource> {
+    suspend fun visibleSources(): List<MangaSource> = withContext(Dispatchers.Default) {
         val prefs = preferences.first()
         val healthMap = health.first()
-        return registry.sources.filter { source ->
+        registry.sources.filter { source ->
             val record = healthMap[source.info.id]
             val health = record?.health ?: source.info.health
             source.info.id !in prefs.disabledSourceIds &&
@@ -71,9 +74,9 @@ class SourceRepository @Inject constructor(
         }
     }
 
-    suspend fun allSources(): List<MangaSource> = registry.sources
+    suspend fun allSources(): List<MangaSource> = withContext(Dispatchers.Default) { registry.sources }
 
-    suspend fun source(id: String): MangaSource? = registry.source(id)
+    suspend fun source(id: String): MangaSource? = withContext(Dispatchers.Default) { registry.source(id) }
 
     suspend fun setEnabled(sourceId: String, enabled: Boolean) {
         settingsStore.updateSources { prefs ->

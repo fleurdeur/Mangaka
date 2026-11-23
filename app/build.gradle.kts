@@ -19,6 +19,17 @@ android {
         compose = true
     }
 
+    // Ship small ABI-specific APKs plus one universal APK. All variants use the
+    // release signing config from signing.properties; no debug signing fallback.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
     sourceSets {
         getByName("main") {
             assets.srcDirs("src/main/assets")
@@ -76,6 +87,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
     androidTestImplementation(platform(libs.androidx.compose.bom))

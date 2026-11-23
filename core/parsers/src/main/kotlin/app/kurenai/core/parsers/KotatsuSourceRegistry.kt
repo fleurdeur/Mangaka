@@ -9,7 +9,6 @@ import app.kurenai.core.source.SourceRegistry
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,21 +24,20 @@ class KotatsuSourceRegistry @Inject constructor(
 ) : SourceRegistry {
 
     private val loaderContext by lazy { KotatsuLoaderContext(context, http, cookieJar) }
-    private val refreshed = AtomicBoolean(false)
-
     @Volatile
     private var cached: List<MangaSource> = emptyList()
 
     override val sources: List<MangaSource>
         get() {
-            if (!refreshed.get()) refresh()
+            if (cached.isEmpty()) refresh()
             return cached
         }
 
     override fun source(id: String): MangaSource? = sources.firstOrNull { it.info.id == id }
 
+    @Synchronized
     override fun refresh() {
-        if (!refreshed.compareAndSet(false, true)) return
+        if (cached.isNotEmpty()) return
         val kotatsu = MangaParserSource.entries.mapNotNull { parserSource ->
             runCatching { KotatsuMangaSource(parserSource, loaderContext) }.getOrNull()
         }

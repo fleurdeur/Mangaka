@@ -19,16 +19,18 @@ class SearchRepository @Inject constructor(
 ) {
     val recentQueries: Flow<List<String>> = searchHistoryDao.observe().map { list -> list.map { it.query } }
 
-    /** Natural-language-ish FTS5 search over the local library. */
+    /** Natural-language-ish FTS4 search over the local library. */
     fun search(query: String, limit: Int = 60): Flow<List<Manga>> {
         val tokens = query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return mangaDao.observeFavorites().map { it.map { entity -> entity.toModel() } }
-        val fts = tokens.joinToString(" AND ") { token ->
+        val terms = tokens.mapNotNull { token ->
             val clean = token.replace("\"", "").replace("'", "").replace(Regex("[^\\p{L}\\p{N}_-]"), "")
-            if (clean.isBlank()) "" else "\"$clean\"*"
-        }.ifBlank { "\"\"" }
+            clean.takeIf { it.isNotBlank() }?.let { "\"$it\"*" }
+        }
+        if (terms.isEmpty()) return mangaDao.observeFavorites().map { it.map { entity -> entity.toModel() } }
+        val fts = terms.joinToString(" AND ")
         val sql = "SELECT manga.* FROM manga JOIN manga_fts ON manga.id = manga_fts.mangaId " +
-            "WHERE manga_fts MATCH ? ORDER BY rank LIMIT ?"
+            "WHERE manga_fts MATCH ? ORDER BY manga.updatedAt DESC, manga.title ASC LIMIT ?"
         return mangaDao.searchFts(SimpleSQLiteQuery(sql, arrayOf<Any>(fts, limit)))
             .map { list -> list.map { it.toModel() } }
     }

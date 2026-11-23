@@ -2,6 +2,22 @@
 
 All notable changes to Mangaka (Kurenai) are recorded here. The project follows semantic versioning for user-facing releases.
 
+## 1.0.1 — Stability, ABI splits and startup fixes
+
+### Fixed
+
+- Replaced the FTS5 search index with FTS4 and added a Room 1 → 2 migration. Some Android SQLite builds do not include FTS5, which could crash the app while opening the library database.
+- The source catalogue no longer constructs every Kotatsu parser while building the onboarding source list. Parsers are created lazily on first use, reducing startup time and memory.
+- Removed a duplicate Coil `SingletonImageLoader.setSafe` call that built and discarded a second image loader at startup.
+- DataStore corruption now falls back to defaults instead of crashing the app.
+- Hardened the release R8 rules for the Kotatsu parser package and source adapters.
+
+### Performance
+
+- Source list construction and parsing are off the main thread where they can be.
+- Startup now avoids network, parser and database work on the UI thread.
+- Added separate ABI APKs for `arm64-v8a` and `armeabi-v7a`, plus a universal APK. All release artifacts are signed with the main release keystore.
+
 ## 1.0.0 — First public release
 
 The first open-source build of Kurenai, a native Android reader for manga, manhwa, manhua, webtoons, comics and light novels.

@@ -1,0 +1,3 @@
+-keep class org.koitharu.kotatsu.parsers.** { *; }
+-keep class org.koitharu.kotatsu.parsers.model.** { *; }
+-keepclassmembers enum org.koitharu.kotatsu.parsers.model.MangaParserSource { *; }

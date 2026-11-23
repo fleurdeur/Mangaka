@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.kurenai.core.database.dao.AiCacheDao
 import app.kurenai.core.database.dao.CategoryDao
@@ -45,7 +46,7 @@ import app.kurenai.core.database.entity.UpdateEntity
         SourceHealthEntity::class,
         AiCacheEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -63,65 +64,89 @@ abstract class KurenaiDatabase : RoomDatabase() {
     abstract fun aiCacheDao(): AiCacheDao
 
     companion object {
+        /**
+         * Version 1 used an FTS5 virtual table. Not every Android SQLite build ships
+         * FTS5, which made the database fail to open on some devices. Version 2 uses
+         * the universally available FTS4 module and rebuilds the index from Room data.
+         */
+        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS manga_fts")
+                createFtsIndex(db)
+                rebuildFtsIndex(db)
+            }
+        }
+
         fun build(context: Context): KurenaiDatabase =
             Room.databaseBuilder(context, KurenaiDatabase::class.java, "kurenai.db")
                 .addCallback(FtsCallback)
+                .addMigrations(MIGRATION_1_2)
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
     }
 }
 
 /**
- * Room only ships an FTS4 annotation, so Kurenai creates a true FTS5 index and its
- * sync triggers directly. Search queries use `manga_fts MATCH` through @RawQuery.
+ * Room only ships an FTS4 annotation, so Kurenai creates the virtual table and its
+ * sync triggers directly. FTS4 is available on every supported Android version,
+ * unlike FTS5. Search queries use `manga_fts MATCH` through @RawQuery.
  */
 private object FtsCallback : RoomDatabase.Callback() {
     override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
-        createFts(db)
+        createFtsIndex(db)
+        rebuildFtsIndex(db)
     }
 
     override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
-        createFts(db)
+        createFtsIndex(db)
     }
+}
 
-    private fun createFts(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS manga_fts USING fts5(
-                mangaId UNINDEXED,
-                title,
-                altTitles,
-                authors,
-                tags,
-                tokenize = 'unicode61 remove_diacritics 2'
-            )
-            """.trimIndent(),
+private fun createFtsIndex(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS manga_fts USING fts4(
+            mangaId,
+            title,
+            altTitles,
+            authors,
+            tags,
+            tokenize=unicode61
         )
-        db.execSQL(
-            """
-            CREATE TRIGGER IF NOT EXISTS manga_fts_ai AFTER INSERT ON manga BEGIN
-                INSERT INTO manga_fts(mangaId, title, altTitles, authors, tags)
-                VALUES (new.id, new.title, new.altTitles, new.authors, new.tags);
-            END
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TRIGGER IF NOT EXISTS manga_fts_ad AFTER DELETE ON manga BEGIN
-                DELETE FROM manga_fts WHERE mangaId = old.id;
-            END
-            """.trimIndent(),
-        )
-        db.execSQL(
-            """
-            CREATE TRIGGER IF NOT EXISTS manga_fts_au AFTER UPDATE ON manga BEGIN
-                DELETE FROM manga_fts WHERE mangaId = old.id;
-                INSERT INTO manga_fts(mangaId, title, altTitles, authors, tags)
-                VALUES (new.id, new.title, new.altTitles, new.authors, new.tags);
-            END
-            """.trimIndent(),
-        )
-    }
+        """.trimIndent(),
+    )
+    db.execSQL(
+        """
+        CREATE TRIGGER IF NOT EXISTS manga_fts_ai AFTER INSERT ON manga BEGIN
+            INSERT INTO manga_fts(mangaId, title, altTitles, authors, tags)
+            VALUES (new.id, new.title, new.altTitles, new.authors, new.tags);
+        END
+        """.trimIndent(),
+    )
+    db.execSQL(
+        """
+        CREATE TRIGGER IF NOT EXISTS manga_fts_ad AFTER DELETE ON manga BEGIN
+            DELETE FROM manga_fts WHERE mangaId = old.id;
+        END
+        """.trimIndent(),
+    )
+    db.execSQL(
+        """
+        CREATE TRIGGER IF NOT EXISTS manga_fts_au AFTER UPDATE ON manga BEGIN
+            DELETE FROM manga_fts WHERE mangaId = old.id;
+            INSERT INTO manga_fts(mangaId, title, altTitles, authors, tags)
+            VALUES (new.id, new.title, new.altTitles, new.authors, new.tags);
+        END
+        """.trimIndent(),
+    )
+}
+
+private fun rebuildFtsIndex(db: SupportSQLiteDatabase) {
+    db.execSQL("DELETE FROM manga_fts")
+    db.execSQL(
+        "INSERT INTO manga_fts(mangaId, title, altTitles, authors, tags) " +
+            "SELECT id, title, altTitles, authors, tags FROM manga",
+    )
 }

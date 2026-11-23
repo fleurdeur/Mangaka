@@ -52,7 +52,7 @@ fun SearchScreen(
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Column(Modifier.weight(1f)) {
                 Text("Search everything", style = MaterialTheme.typography.headlineSmall)
-                Text("Library FTS5, then optional source search", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Library FTS4, then optional source search", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         OutlinedTextField(

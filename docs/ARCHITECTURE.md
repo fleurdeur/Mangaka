@@ -8,7 +8,7 @@ Kurenai follows a multi-module MVVM design. Modules depend inward on stable cont
  ├── :core:data        repositories, workers, engines
  ├── :core:parsers     Kotatsu adapter
  ├── :core:network     HTTP, cookies, challenge solving
- ├── :core:database    Room + FTS5
+ ├── :core:database    Room + FTS4
  ├── :core:datastore   DataStore + encrypted secrets
  ├── :core:image       Coil pipeline
  ├── :core:source      source contracts
@@ -46,7 +46,7 @@ Animated flow:
 
 ## Persistence
 
-- Room database `kurenai.db` with WAL. FTS5 virtual table `manga_fts` is created in a callback and kept in sync with triggers.
+- Room database `kurenai.db` with WAL. FTS4 virtual table `manga_fts` is created in a callback and kept in sync with triggers.
 - Preferences DataStore stores JSON-serialised `AppSettings` and `SourcePreferences`; unknown keys are tolerated for forward compatibility.
 - `EncryptedSharedPreferences` stores cookies, tracker tokens, AI/translation keys and the adult-content PIN hash.
 - Backups are AES-256-GCM encrypted with PBKDF2-derived keys and are opt-in.
