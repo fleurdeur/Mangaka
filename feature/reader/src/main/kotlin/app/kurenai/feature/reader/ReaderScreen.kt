@@ -16,11 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -85,7 +88,14 @@ import app.kurenai.core.model.ReaderAction
 import app.kurenai.core.model.ReaderBackground
 import app.kurenai.core.model.ReadingMode
 import coil3.compose.AsyncImage
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import coil3.request.ImageRequest
+import coil3.request.transformations
+import coil3.request.bitmapConfig
+import coil3.request.allowRgb565
+import coil3.size.Precision
+import coil3.size.Size
 import coil3.request.crossfade
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -107,7 +117,12 @@ fun ReaderScreen(
 
     val settings = state.settings
     val isWebtoon = settings.mode == ReadingMode.WEBTOON || settings.mode == ReadingMode.CONTINUOUS_VERTICAL
-    val pagerState = rememberPagerState(initialPage = state.initialPage, pageCount = { state.pages.size })
+    val doublePage = settings.doublePage && LocalConfiguration.current.screenWidthDp > 600 && !isWebtoon && settings.mode != ReadingMode.PAGED_VERTICAL
+    val pagerPageCount = if (doublePage) (state.pages.size + 1) / 2 else state.pages.size
+    val pagerState = rememberPagerState(
+        initialPage = if (doublePage) state.initialPage / 2 else state.initialPage,
+        pageCount = { pagerPageCount },
+    )
     val listState = rememberLazyListState()
 
     BackHandler {
@@ -130,14 +145,19 @@ fun ReaderScreen(
 
     LaunchedEffect(settings.keepScreenOn) { view.keepScreenOn = settings.keepScreenOn }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
-    LaunchedEffect(state.initialPage, state.pages.size) {
-        if (state.pages.isNotEmpty() && pagerState.currentPage != state.initialPage) {
-            pagerState.scrollToPage(state.initialPage.coerceIn(0, state.pages.lastIndex))
+    LaunchedEffect(state.initialPage, state.pages.size, doublePage) {
+        if (state.pages.isNotEmpty()) {
+            val target = if (doublePage) state.initialPage / 2 else state.initialPage
+            if (pagerState.currentPage != target) {
+                pagerState.scrollToPage(target.coerceIn(0, (pagerPageCount - 1).coerceAtLeast(0)))
+            }
         }
     }
-    LaunchedEffect(pagerState, state.pages.size, isWebtoon) {
+    LaunchedEffect(pagerState, state.pages.size, isWebtoon, doublePage) {
         if (!isWebtoon && state.pages.isNotEmpty()) {
-            snapshotFlow { pagerState.currentPage }.collect { page -> viewModel.onPageChanged(page) }
+            snapshotFlow { pagerState.currentPage }.collect { page ->
+                viewModel.onPageChanged(if (doublePage) page * 2 else page)
+            }
         }
     }
     LaunchedEffect(listState, state.pages.size, isWebtoon) {
@@ -153,7 +173,7 @@ fun ReaderScreen(
                 if (listState.layoutInfo.visibleItemsInfo.isEmpty()) continue
                 val amount = (14f * settings.autoScrollSpeed).toInt().coerceAtLeast(2)
                 listState.scrollBy(amount.toFloat())
-            } else if (pagerState.currentPage < state.pages.lastIndex) {
+            } else if (pagerState.currentPage < pagerPageCount - 1) {
                 pagerState.animateScrollToPage(pagerState.currentPage + 1)
             }
         }
@@ -194,7 +214,7 @@ fun ReaderScreen(
                         true
                     }
                     Key.DirectionRight, Key.Spacebar -> {
-                        if (!isWebtoon) scope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(state.pages.lastIndex)) }
+                        if (!isWebtoon) scope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(pagerPageCount - 1)) }
                         true
                     }
                     Key.DirectionLeft -> {
@@ -219,7 +239,7 @@ fun ReaderScreen(
                         }
                         offset.x > width * (1f - zones.rightWidthFraction) -> {
                             scope.launch {
-                                if (isWebtoon) listState.scrollBy(height * 0.8f) else if (pagerState.currentPage < state.pages.lastIndex) {
+                                if (isWebtoon) listState.scrollBy(height * 0.8f) else if (pagerState.currentPage < pagerPageCount - 1) {
                                     pagerState.animateScrollToPage(pagerState.currentPage + 1)
                                 }
                             }
@@ -238,32 +258,40 @@ fun ReaderScreen(
             )
             isWebtoon -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 itemsIndexed(state.pages, key = { index, page -> "${page.url}-$index" }) { index, page ->
-                    ReaderPage(page.url, index, settings, Modifier.fillMaxWidth())
+                    ReaderPage(page.url, index, settings, state.chapter?.url, Modifier.fillMaxWidth())
                 }
             }
-            else -> {
-                val doublePage = settings.doublePage && LocalConfiguration.current.screenWidthDp > 600
-                if (doublePage) {
-                    HorizontalPager(
-                        state = pagerState,
-                        beyondViewportPageCount = state.prefetchPages,
-                        modifier = Modifier.fillMaxSize(),
-                    ) { pageIndex ->
-                        Row(Modifier.fillMaxSize()) {
-                            val first = state.pages.getOrNull(pageIndex * 2)
-                            val second = state.pages.getOrNull(pageIndex * 2 + 1)
-                            if (first != null) ReaderPage(first.url, pageIndex * 2, settings, Modifier.weight(1f).fillMaxSize())
-                            if (second != null) ReaderPage(second.url, pageIndex * 2 + 1, settings, Modifier.weight(1f).fillMaxSize())
-                        }
+            else -> when {
+                settings.mode == ReadingMode.PAGED_VERTICAL -> VerticalPager(
+                    state = pagerState,
+                    beyondViewportPageCount = state.prefetchPages,
+                    modifier = Modifier.fillMaxSize(),
+                ) { pageIndex ->
+                    ReaderPage(state.pages[pageIndex].url, pageIndex, settings, state.chapter?.url, Modifier.fillMaxSize())
+                }
+                doublePage -> HorizontalPager(
+                    state = pagerState,
+                    beyondViewportPageCount = state.prefetchPages,
+                    reverseLayout = settings.mode == ReadingMode.PAGED_RTL,
+                    modifier = Modifier.fillMaxSize(),
+                ) { pageIndex ->
+                    Row(Modifier.fillMaxSize()) {
+                        val rtl = settings.mode == ReadingMode.PAGED_RTL
+                        val leftIndex = if (rtl) pageIndex * 2 + 1 else pageIndex * 2
+                        val rightIndex = if (rtl) pageIndex * 2 else pageIndex * 2 + 1
+                        val left = state.pages.getOrNull(leftIndex)
+                        val right = state.pages.getOrNull(rightIndex)
+                        if (left != null) ReaderPage(left.url, leftIndex, settings, state.chapter?.url, Modifier.weight(1f).fillMaxSize())
+                        if (right != null) ReaderPage(right.url, rightIndex, settings, state.chapter?.url, Modifier.weight(1f).fillMaxSize())
                     }
-                } else {
-                    HorizontalPager(
-                        state = pagerState,
-                        beyondViewportPageCount = state.prefetchPages,
-                        modifier = Modifier.fillMaxSize(),
-                    ) { pageIndex ->
-                        ReaderPage(state.pages[pageIndex].url, pageIndex, settings, Modifier.fillMaxSize())
-                    }
+                }
+                else -> HorizontalPager(
+                    state = pagerState,
+                    beyondViewportPageCount = state.prefetchPages,
+                    reverseLayout = settings.mode == ReadingMode.PAGED_RTL,
+                    modifier = Modifier.fillMaxSize(),
+                ) { pageIndex ->
+                    ReaderPage(state.pages[pageIndex].url, pageIndex, settings, state.chapter?.url, Modifier.fillMaxSize())
                 }
             }
         }
@@ -277,6 +305,7 @@ fun ReaderScreen(
             Row(
                 Modifier.fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)))
+                    .statusBarsPadding()
                     .padding(horizontal = 8.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -299,8 +328,10 @@ fun ReaderScreen(
                 IconButton(onClick = { viewModel.setTranslationVisible(!state.translationVisible) }) {
                     Icon(Icons.Rounded.GTranslate, "Translate", tint = if (state.translationVisible) MaterialTheme.colorScheme.primary else Color.White)
                 }
-                IconButton(onClick = { state.manga?.let { state.chapter?.let { c -> onOpenAnimated(it.id, c.id) } } }) {
-                    Icon(Icons.Rounded.AutoAwesome, "Animated chapter", tint = Color.White)
+                if (state.animatedEnabled) {
+                    IconButton(onClick = { state.manga?.let { state.chapter?.let { c -> onOpenAnimated(it.id, c.id) } } }) {
+                        Icon(Icons.Rounded.AutoAwesome, "Animated chapter", tint = Color.White)
+                    }
                 }
                 IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Rounded.Settings, "Reader settings", tint = Color.White) }
             }
@@ -310,11 +341,12 @@ fun ReaderScreen(
             Column(
                 Modifier.fillMaxWidth()
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))))
+                    .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 18.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "${(state.currentPage + 1).coerceAtMost(state.pages.size)} / ${state.pages.size}",
+                        "${(state.currentPage + if (doublePage) 2 else 1).coerceAtMost(state.pages.size)} / ${state.pages.size}",
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium,
                     )
@@ -359,7 +391,13 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun ReaderPage(url: String, index: Int, settings: app.kurenai.core.model.ReaderSettings, modifier: Modifier = Modifier) {
+private fun ReaderPage(
+    url: String,
+    index: Int,
+    settings: app.kurenai.core.model.ReaderSettings,
+    referer: String?,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val colorFilter = when {
         settings.einkMode || settings.colorFilter == ColorFilterMode.GRAYSCALE ->
@@ -372,14 +410,36 @@ private fun ReaderPage(url: String, index: Int, settings: app.kurenai.core.model
     }
     AsyncImage(
         model = ImageRequest.Builder(context)
-            .data(url)
+            .data(normalizeReaderImageUrl(url))
+            // Never let Coil subsample a chapter page. The renderer may scale it
+            // down for the viewport, but the source pixels are kept intact.
+            .size(Size.ORIGINAL)
+            .precision(Precision.EXACT)
+            .bitmapConfig(android.graphics.Bitmap.Config.ARGB_8888)
+            .allowRgb565(false)
+            .apply { if (settings.autoCrop) transformations(MarginCropTransformation()) }
             .crossfade(120)
+            .httpHeaders(
+                NetworkHeaders.Builder()
+                    .set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    .apply { referer?.takeIf { it.isNotBlank() }?.let { set("Referer", it) } }
+                    .build(),
+            )
             .build(),
         contentDescription = "Page ${index + 1}",
         modifier = modifier,
         contentScale = if (settings.mode == ReadingMode.WEBTOON || settings.mode == ReadingMode.CONTINUOUS_VERTICAL) ContentScale.FillWidth else ContentScale.Fit,
         colorFilter = colorFilter,
     )
+}
+
+private fun normalizeReaderImageUrl(raw: String): String {
+    val url = raw.trim().replace("&amp;", "&")
+    return when {
+        url.startsWith("//") -> "https:$url"
+        url.startsWith("data:", ignoreCase = true) -> url
+        else -> url
+    }
 }
 
 @Composable

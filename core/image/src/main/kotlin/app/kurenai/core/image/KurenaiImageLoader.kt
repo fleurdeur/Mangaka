@@ -5,7 +5,9 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
+import coil3.gif.GifDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.svg.SvgDecoder
 import coil3.request.crossfade
 import app.kurenai.core.network.KurenaiHttp
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -28,6 +30,11 @@ class KurenaiImageLoader @Inject constructor(
         return ImageLoader.Builder(context)
             .components {
                 add(OkHttpNetworkFetcherFactory(callFactory = { http.client() }))
+                // Chapter pages are not always plain JPEG/PNG. Register animated
+                // GIF/WebP/HEIF and vector SVG explicitly; the platform decoder
+                // covers AVIF/HEIF on newer Android releases. Data URIs are built in.
+                add(GifDecoder.Factory())
+                add(SvgDecoder.Factory())
             }
             .memoryCache {
                 MemoryCache.Builder()

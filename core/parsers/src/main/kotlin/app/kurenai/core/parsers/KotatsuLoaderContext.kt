@@ -62,6 +62,10 @@ class KotatsuLoaderContext(
     override fun getConfig(source: MangaSource): MangaSourceConfig =
         configs.computeIfAbsent(source.name) { SourceConfig(context, source) }
 
+    fun <T> updateConfig(source: MangaSource, key: ConfigKey<T>, value: T) {
+        (getConfig(source) as? SourceConfig)?.set(key, value)
+    }
+
     override fun getDefaultUserAgent(): String = KurenaiHttp.CHROME_UA
 
     override fun getPreferredLocales(): List<Locale> = listOf(Locale.getDefault())

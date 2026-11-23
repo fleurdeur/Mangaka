@@ -6,10 +6,14 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +33,7 @@ class ChallengeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val id = intent.getStringExtra("challengeId") ?: run { finish(); return }
         val url = intent.getStringExtra("url").orEmpty()
         val host = intent.getStringExtra("host").orEmpty()
@@ -48,7 +53,7 @@ class ChallengeActivity : ComponentActivity() {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun ChallengePage(url: String, host: String, userAgent: String, onDone: () -> Unit, onCancel: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)) {
         Text("$host needs a quick check", style = MaterialTheme.typography.titleMedium)
         Text(
             "This is a real browser inside Kurenai. Complete the verification once; the original request will continue automatically.",

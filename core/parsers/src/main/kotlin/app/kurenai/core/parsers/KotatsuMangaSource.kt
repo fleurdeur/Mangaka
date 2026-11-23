@@ -30,7 +30,9 @@ import org.koitharu.kotatsu.parsers.model.MangaParserSource
 import org.koitharu.kotatsu.parsers.model.MangaState as KState
 import org.koitharu.kotatsu.parsers.model.MangaTag as KTag
 import org.koitharu.kotatsu.parsers.model.SortOrder as KSortOrder
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Adapter that exposes one Kotatsu parser as a native Kurenai source. Every source
@@ -41,18 +43,33 @@ class KotatsuMangaSource(
     private val loaderContext: KotatsuLoaderContext,
 ) : MangaSource {
 
-    private val parser: MangaParser by lazy { loaderContext.newParserInstance(parserSource) }
+    @Volatile
+    private var resolvedDomain: String = ""
+
+    private val parser: MangaParser by lazy {
+        loaderContext.newParserInstance(parserSource).also { instance ->
+            resolvedDomain = runCatching { instance.domain }
+                .getOrDefault("")
+                .removePrefix("https://")
+                .removePrefix("http://")
+                .substringBefore('/')
+                .substringBefore(':')
+        }
+    }
     private val optionsMutex = Mutex()
     private var cachedOptions: MangaListFilterOptions? = null
 
-    override val info: SourceInfo by lazy {
-        SourceInfo(
+    private data class CachedDetails(val fetchedAt: Long, val value: KManga)
+    private val detailsCache = ConcurrentHashMap<String, CachedDetails>()
+
+    override val info: SourceInfo
+        get() = SourceInfo(
             id = "kotatsu:${parserSource.name}",
             name = parserSource.title,
             language = parserSource.locale.ifBlank { "multi" },
             // Resolved lazily when the parser is first used. Instantiating every
             // parser here would make the first source list slow and memory-heavy.
-            domain = "",
+            domain = resolvedDomain,
             kind = parserSource.contentType.toKind(),
             nsfw = parserSource.contentType == KContentType.HENTAI,
             license = SourceLicense.UNKNOWN,
@@ -60,16 +77,22 @@ class KotatsuMangaSource(
             description = "Kotatsu parser · ${parserSource.contentType.name.lowercase().replace('_', ' ')}",
             version = "kotatsu-parsers",
         )
-    }
 
     override suspend fun search(filters: SearchFilters, offset: Int, limit: Int): List<Manga> {
-        val options = optionsMutex.withLock { cachedOptions ?: parser.getFilterOptions().also { cachedOptions = it } }
-        val tags = options.availableTags.filter { tag ->
-            filters.tags.isEmpty() || filters.tags.any { it.equals(tag.title, true) || it == tag.key }
-        }.toSet()
-        val excluded = options.availableTags.filter { tag ->
+        // Only tag filters need the remote tag catalogue. Plain title searches
+        // used to fetch filter options first, doubling latency on every source
+        // and making "search all sources" feel much slower than the network.
+        val options = if (filters.tags.isNotEmpty() || filters.excludedTags.isNotEmpty()) {
+            optionsMutex.withLock { cachedOptions ?: parser.getFilterOptions().also { cachedOptions = it } }
+        } else {
+            null
+        }
+        val tags = options?.availableTags?.filter { tag ->
+            filters.tags.any { it.equals(tag.title, true) || it == tag.key }
+        }.orEmpty().toSet()
+        val excluded = options?.availableTags?.filter { tag ->
             filters.excludedTags.any { it.equals(tag.title, true) || it == tag.key }
-        }.toSet()
+        }.orEmpty().toSet()
         val states = filters.statuses.mapNotNull { it.toKotatsu() }.toSet()
         val ratings = filters.contentRatings.map { it.toKotatsu() }.toSet()
         val kinds = filters.kinds.map { it.toKotatsuType() }.toSet()
@@ -91,27 +114,69 @@ class KotatsuMangaSource(
 
     override suspend fun details(manga: Manga): Manga {
         val details = parser.getDetails(manga.toKotatsu())
+        detailsCache[manga.id] = CachedDetails(System.currentTimeMillis(), details)
         return details.toModel()
     }
 
     override suspend fun chapters(manga: Manga): List<MangaChapter> {
-        val details = parser.getDetails(manga.toKotatsu())
+        // Details already contains the chapter list for almost every parser.
+        // Reuse a fresh copy instead of asking the website for the same page a
+        // second time immediately after opening a series.
+        val cached = detailsCache[manga.id]?.takeIf {
+            System.currentTimeMillis() - it.fetchedAt < 45_000L
+        }?.value
+        val details = cached ?: parser.getDetails(manga.toKotatsu()).also {
+            detailsCache[manga.id] = CachedDetails(System.currentTimeMillis(), it)
+        }
         return details.chapters.orEmpty().map { it.toModel(manga.id) }
     }
 
     override suspend fun pages(chapter: MangaChapter): List<MangaPage> {
         val kChapter = chapter.toKotatsu()
         val pages = parser.getPages(kChapter)
+        val chapterUrl = chapter.url
         return pages.mapIndexed { index, page ->
-            val url = runCatching { parser.getPageUrl(page) }.getOrElse { page.url }
+            val raw = runCatching { parser.getPageUrl(page) }.getOrElse { page.url }
+            val url = resolvePageUrl(raw, chapterUrl)
             MangaPage(
                 index = index,
                 url = url,
-                preview = page.preview,
+                preview = page.preview?.let { resolvePageUrl(it, chapterUrl) },
                 sourceId = info.id,
                 chapterId = chapter.id,
             )
         }
+    }
+
+    /**
+     * Parsers normally return absolute URLs, but some return protocol-relative,
+     * root-relative or HTML-escaped paths. Normalise all of them here so Coil and
+     * the animated renderer receive a real URL. Data/blob URIs are left intact.
+     */
+    private fun resolvePageUrl(raw: String, chapterUrl: String?): String {
+        val value = raw.trim().replace("&amp;", "&")
+        if (value.isBlank()) return value
+        return runCatching {
+            when {
+                value.startsWith("data:", ignoreCase = true) -> value
+                value.startsWith("blob:", ignoreCase = true) -> value
+                value.startsWith("//") -> "https:$value"
+                value.startsWith("http://", ignoreCase = true) ||
+                    value.startsWith("https://", ignoreCase = true) -> value
+                value.startsWith("/") -> {
+                    val base = chapterUrl?.toHttpUrlOrNull()
+                        ?: resolvedDomain.takeIf { it.isNotBlank() }?.let { "https://$it".toHttpUrlOrNull() }
+                        ?: return value
+                    base.resolve(value)?.toString() ?: value
+                }
+                else -> {
+                    val base = chapterUrl?.toHttpUrlOrNull()
+                        ?: resolvedDomain.takeIf { it.isNotBlank() }?.let { "https://$it".toHttpUrlOrNull() }
+                        ?: return value
+                    base.resolve(value)?.toString() ?: value
+                }
+            }
+        }.getOrDefault(value)
     }
 
     override suspend fun resolveImageUrl(page: MangaPage): String = page.url
@@ -138,6 +203,23 @@ class KotatsuMangaSource(
     override fun requestHeaders(): Map<String, String> =
         runCatching { parser.getRequestHeaders().toMultimap().mapValues { it.value.firstOrNull().orEmpty() } }
             .getOrDefault(emptyMap())
+
+    override suspend fun tryAlternateDomain(): Boolean {
+        val key = runCatching { parser.configKeyDomain }.getOrNull() ?: return false
+        val presets = key.presetValues.mapNotNull { it.trim().takeIf(String::isNotEmpty) }
+        if (presets.size < 2) return false
+        val current = resolvedDomain.ifBlank { runCatching { parser.domain }.getOrDefault("") }
+        val next = presets.firstOrNull { preset ->
+            val normalized = preset.removePrefix("https://").removePrefix("http://").substringBefore('/')
+            normalized.isNotBlank() && !current.contains(normalized, ignoreCase = true) &&
+                !normalized.contains(current, ignoreCase = true)
+        } ?: return false
+        runCatching { loaderContext.updateConfig(parserSource, key, next) }.getOrElse { return false }
+        resolvedDomain = next.removePrefix("https://").removePrefix("http://").substringBefore('/').substringBefore(':')
+        cachedOptions = null
+        detailsCache.clear()
+        return true
+    }
 
     private fun KManga.toModel(): Manga = Manga(
         id = "kotatsu:${parserSource.name}:${id}",

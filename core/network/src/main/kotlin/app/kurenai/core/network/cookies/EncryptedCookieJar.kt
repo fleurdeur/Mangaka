@@ -84,7 +84,18 @@ class EncryptedCookieJar(context: Context) : CookieJar {
 
     fun hasClearance(host: String, maxAgeMs: Long = 25 * 60_000L): Boolean {
         val now = System.currentTimeMillis()
-        return clearanceSeen.entries.any { (key, at) -> key.endsWith(host) && now - at < maxAgeMs }
+        val remembered = clearanceSeen.entries.any { (key, at) -> key.endsWith(host) && now - at < maxAgeMs }
+        if (remembered) return true
+        // Clearance survives process death in encrypted storage. Do not force a
+        // second WebView challenge just because the in-memory marker was lost.
+        val stored = synchronized(this) {
+            cache[host] ?: load(host).also { cache[host] = it.toMutableList() }
+        }
+        return stored.any { cookie ->
+            cookie.expiresAt > now && cookie.matches(
+                HttpUrl.Builder().scheme("https").host(host).build(),
+            ) && (cookie.name == "cf_clearance" || cookie.name == "__cf_bm" || cookie.name == "ddos-guard")
+        }
     }
 
     fun exportAll(): Map<String, String> = prefs.all.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()

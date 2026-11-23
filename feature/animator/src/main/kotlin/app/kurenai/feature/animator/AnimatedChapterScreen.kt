@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -88,14 +90,30 @@ fun AnimatedChapterScreen(
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        val renderer = remember(state.bitmap) { AnimRenderer(state.bitmap, state.plan) }
+        val renderer = remember { AnimRenderer() }
+        var glView by remember { mutableStateOf<AnimatedGLSurfaceView?>(null) }
         val playback = state.playback
-        LaunchedEffect(playback.playing) { renderer.playing = playback.playing }
-        LaunchedEffect(state.plan) { renderer.updatePlan(state.plan) }
+        LaunchedEffect(playback.playing) {
+            renderer.playing = playback.playing
+            glView?.setAnimating(playback.playing)
+        }
+        LaunchedEffect(state.bitmap) {
+            renderer.updateBitmap(state.bitmap)
+            glView?.requestRender()
+        }
+        LaunchedEffect(state.plan) {
+            renderer.updatePlan(state.plan)
+            glView?.requestRender()
+        }
+        LaunchedEffect(playback.currentPanel) {
+            renderer.focusPanel(playback.currentPanel)
+            glView?.requestRender()
+        }
 
         AndroidView(
-            factory = { context -> AnimatedGLSurfaceView(context, renderer) },
+            factory = { context -> AnimatedGLSurfaceView(context, renderer).also { glView = it } },
             modifier = Modifier.fillMaxSize(),
+            update = { it.setAnimating(playback.playing) },
             onRelease = { it.onPause() },
         )
 
@@ -113,6 +131,7 @@ fun AnimatedChapterScreen(
         Row(
             Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.8f), Color.Transparent)))
+                .statusBarsPadding()
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -130,10 +149,11 @@ fun AnimatedChapterScreen(
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))))
+                .navigationBarsPadding()
                 .padding(16.dp),
         ) {
             state.subtitle.takeIf { state.settings.subtitles && it.isNotBlank() }?.let { text ->
-                val active = state.activeWord?.word
+                val active = state.activeWord?.word?.takeIf { state.settings.karaoke }
                 val annotated = buildAnnotatedString {
                     if (active.isNullOrBlank()) {
                         append(text)
@@ -200,7 +220,7 @@ fun AnimatedChapterScreen(
                     }
                 }
                 Text("Narration speed", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-                Slider(value = state.settings.speed, onValueChange = {}, valueRange = 0.5f..2f)
+                Slider(value = state.settings.speed, onValueChange = viewModel::setSpeed, valueRange = 0.5f..2f)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AssistChip(onClick = { viewModel.setIntensity(MotionIntensity.STILL) }, label = { Text("Reduced motion") })
                     AssistChip(onClick = { viewModel.autoCast() }, label = { Text("Auto-cast voices") })

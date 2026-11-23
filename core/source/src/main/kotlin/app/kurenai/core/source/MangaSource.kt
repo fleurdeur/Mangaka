@@ -34,6 +34,12 @@ interface MangaSource {
     suspend fun resolveLink(url: String): Manga? = null
 
     fun requestHeaders(): Map<String, String> = emptyMap()
+
+    /**
+     * Rotate to another mirror declared by the parser when the current host
+     * cannot be resolved. Returns true when a new host was selected.
+     */
+    suspend fun tryAlternateDomain(): Boolean = false
 }
 
 interface SourceRegistry {

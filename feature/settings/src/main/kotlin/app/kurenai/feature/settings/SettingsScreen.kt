@@ -42,12 +42,15 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -97,23 +100,20 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var section by remember { mutableStateOf("All") }
+    var appearanceOpen by remember { mutableStateOf(false) }
     val settings = state.settings
 
     val rows = buildList {
-        add(SettingRow("Appearance", "Palette, dark mode, dynamic color, font size", "Appearance", Icons.Rounded.Palette, onClick = {}))
+        add(SettingRow("Appearance", "Palette, dark mode, dynamic color, font size", "Appearance", Icons.Rounded.Palette, onClick = { appearanceOpen = true }))
         add(SettingRow("Dynamic color", "Use Material You Monet colors", "Appearance", Icons.Rounded.ColorLens, settings.theme.dynamicColor) { value ->
             viewModel.update { it.copy(theme = it.theme.copy(dynamicColor = value)) }
         })
         add(SettingRow("AMOLED black", "Pure black surfaces for OLED panels", "Appearance", Icons.Rounded.DarkMode, settings.theme.amoled) { value ->
             viewModel.update { it.copy(theme = it.theme.copy(amoled = value)) }
         })
-        add(SettingRow("Cover-adaptive theme", "Tint the interface from the current cover", "Appearance", Icons.Rounded.Image, settings.theme.coverAdaptive) { value ->
-            viewModel.update { it.copy(theme = it.theme.copy(coverAdaptive = value)) }
-        })
         add(SettingRow("Kurenai crimson", "Warm coffee base with crimson accent", "Appearance", Icons.Rounded.Brightness6) {
             viewModel.setPalette(Palette.KURENAI)
         })
-        add(SettingRow("Reader", "Tap zones, page turn, color filters, e-ink", "Reader", Icons.Rounded.Tune, onClick = {}))
         add(SettingRow("Animated Chapters", "Quality, motion, voices, cache", "Reader", Icons.Rounded.Animation, onClick = onOpenAnimated))
         add(SettingRow("Translation & learning", "OCR, overlays, vocabulary, SRS", "Reader", Icons.Rounded.GTranslate, onClick = onOpenTranslation))
         add(SettingRow("Downloads & storage", "Queue, smart rules, cleanup", "Downloads", Icons.Rounded.Download, onClick = onOpenDownloads))
@@ -131,7 +131,7 @@ fun SettingsScreen(
         add(SettingRow("Automatic challenge handling", "Resolve Cloudflare challenges in a hidden WebView", "Network", Icons.Rounded.CloudQueue, settings.challengeHandlingEnabled) { value ->
             viewModel.update { it.copy(challengeHandlingEnabled = value) }
         })
-        add(SettingRow("DNS-over-HTTPS", "Encrypt DNS queries through Cloudflare", "Network", Icons.Rounded.Security, settings.dohEnabled) { value ->
+        add(SettingRow("Encrypted DNS", "DoH with system-DNS fallback", "Network", Icons.Rounded.Security, settings.dohEnabled) { value ->
             viewModel.update { it.copy(dohEnabled = value) }
         })
         add(SettingRow("Tracking & sync", "AniList, MyAnimeList, Shikimori, Kitsu", "Tracking", Icons.Rounded.Sync, onClick = onOpenTrackers))
@@ -151,15 +151,11 @@ fun SettingsScreen(
         add(SettingRow("Recommendations", "On-device taste profile and suggestions", "Privacy", Icons.Rounded.AutoAwesome, settings.recommendationsEnabled) { value ->
             viewModel.update { it.copy(recommendationsEnabled = value) }
         })
-        add(SettingRow("Crash reports", "Opt-in, no analytics, no ads", "Privacy", Icons.Rounded.Info, settings.crashReportsEnabled) { value ->
-            viewModel.update { it.copy(crashReportsEnabled = value) }
-        })
         add(SettingRow("Taste profile", "Edit or reset what Kurenai has learned", "Privacy", Icons.Rounded.AutoAwesome, onClick = onOpenTaste))
         add(SettingRow("AI librarian", "Optional cloud provider and keys", "Privacy", Icons.Rounded.AddCircle, onClick = onOpenAiSettings))
         add(SettingRow("Notifications", "New chapter alerts and update digest", "Notifications", Icons.Rounded.Notifications, settings.notificationsEnabled) { value ->
             viewModel.update { it.copy(notificationsEnabled = value) }
         })
-        add(SettingRow("Language", "Follow system, or choose a reading language", "Language", Icons.Rounded.Language, onClick = {}))
         add(SettingRow("Reading stats", "Streaks, pages, year in review", "Advanced", Icons.Rounded.Tune, onClick = onOpenStats))
         add(SettingRow("Help Center", "Guides, FAQ and source troubleshooting", "About", Icons.Rounded.Help, onClick = onOpenHelp))
         add(SettingRow("What's New", "Recent changes and roadmap highlights", "About", Icons.Rounded.Info, onClick = onOpenWhatsNew))
@@ -199,6 +195,76 @@ fun SettingsScreen(
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+
+    if (appearanceOpen) {
+        AppearanceDialog(
+            settings = settings,
+            onMode = viewModel::setThemeMode,
+            onPalette = viewModel::setPalette,
+            onDynamic = { value -> viewModel.update { it.copy(theme = it.theme.copy(dynamicColor = value)) } },
+            onAmoled = { value -> viewModel.update { it.copy(theme = it.theme.copy(amoled = value)) } },
+            onDismiss = { appearanceOpen = false },
+        )
+    }
+}
+
+@Composable
+private fun AppearanceDialog(
+    settings: AppSettings,
+    onMode: (ThemeMode) -> Unit,
+    onPalette: (Palette) -> Unit,
+    onDynamic: (Boolean) -> Unit,
+    onAmoled: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Appearance") },
+        text = {
+            Column {
+                Text("Mode", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ThemeMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = settings.theme.mode == mode,
+                            onClick = { onMode(mode) },
+                            label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text("Palette", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Palette.entries.take(3).forEach { palette ->
+                        FilterChip(
+                            selected = !settings.theme.dynamicColor && settings.theme.palette == palette,
+                            onClick = { onPalette(palette) },
+                            label = { Text(palette.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Palette.entries.drop(3).forEach { palette ->
+                        FilterChip(
+                            selected = !settings.theme.dynamicColor && settings.theme.palette == palette,
+                            onClick = { onPalette(palette) },
+                            label = { Text(palette.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Dynamic Monet colors", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = settings.theme.dynamicColor, onCheckedChange = onDynamic)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("AMOLED black", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = settings.theme.amoled, onCheckedChange = onAmoled)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }
 
 @Composable

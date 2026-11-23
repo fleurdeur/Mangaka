@@ -3,6 +3,7 @@ package app.kurenai.feature.animator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,6 +29,8 @@ import app.kurenai.feature.animator.pipeline.RigBuilder
 import app.kurenai.feature.animator.tts.NarrationEngine
 import app.kurenai.feature.animator.tts.VoiceOption
 import app.kurenai.feature.animator.tts.WordTiming
+import app.kurenai.feature.translation.MlKitOcrEngine
+import kotlinx.coroutines.delay
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +54,7 @@ data class AnimatedUiState(
     val settings: AnimatedChapterSettings = AnimatedChapterSettings(),
     val intensity: MotionIntensity = MotionIntensity.CINEMATIC,
     val subtitle: String = "",
+    val narration: List<String> = emptyList(),
     val activeWord: WordTiming? = null,
     val voices: List<VoiceOption> = emptyList(),
     val editorOpen: Boolean = false,
@@ -76,6 +80,7 @@ class AnimatedChapterViewModel @Inject constructor(
     private val director = Director()
     private val rigBuilder = RigBuilder()
     private val narration = NarrationEngine(context)
+    private val ocr = MlKitOcrEngine()
     private var speechJob: Job? = null
 
     init {
@@ -97,7 +102,14 @@ class AnimatedChapterViewModel @Inject constructor(
                 _state.value = _state.value.copy(playback = PlaybackState(error = "No pages to animate."))
                 return@launch
             }
-            val bitmap = downloadBitmap(pages.first().url)
+            val bitmap = downloadBitmap(pages.first().url, chapter.url, settings.quality)
+            val effectiveIntensity = if (settings.reducedMotion) {
+                app.kurenai.core.model.MotionIntensity.STILL
+            } else if (settings.photosensitivitySafe && settings.intensity == app.kurenai.core.model.MotionIntensity.FULL) {
+                app.kurenai.core.model.MotionIntensity.CINEMATIC
+            } else {
+                settings.intensity
+            }
             val rightToLeft = manga.kind == app.kurenai.core.model.ContentKind.MANGA ||
                 manga.kind == app.kurenai.core.model.ContentKind.ONE_SHOT
             val panels = if (bitmap != null) {
@@ -105,24 +117,63 @@ class AnimatedChapterViewModel @Inject constructor(
             } else {
                 listOf(PanelRect(0f, 0f, 1f, 1f))
             }
-            val bubbles = if (bitmap != null) {
+            val ocrLines = if (bitmap != null) {
+                runCatching { ocr.recognize(bitmap) }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+            val bubbles = if (ocrLines.isNotEmpty()) {
+                ocrLines.mapIndexedNotNull { index, line ->
+                    val cx = (line.left + line.right) / 2f
+                    val cy = (line.top + line.bottom) / 2f
+                    val panelIndex = panels.indexOfFirst { panel ->
+                        cx in panel.left..panel.right && cy in panel.top..panel.bottom
+                    }.coerceAtLeast(0)
+                    line.text.trim().takeIf { it.isNotBlank() }?.let { text ->
+                        Bubble(
+                            panelIndex = panelIndex,
+                            text = text,
+                            left = line.left,
+                            top = line.top,
+                            right = line.right,
+                            bottom = line.bottom,
+                            isNarration = false,
+                        )
+                    }
+                }.ifEmpty {
+                    bubbleDetector.detect(bitmap ?: return@launch, panels)
+                }
+            } else if (bitmap != null) {
                 bubbleDetector.detect(bitmap, panels)
             } else {
-                panels.map { Bubble(0, "", 0.1f, 0.1f, 0.9f, 0.2f, isNarration = true) }
+                emptyList()
+            }
+            val panelTexts = panels.map { panel ->
+                ocrLines.filter { line ->
+                    val cx = (line.left + line.right) / 2f
+                    val cy = (line.top + line.bottom) / 2f
+                    cx in panel.left..panel.right && cy in panel.top..panel.bottom
+                }.sortedWith(compareBy({ it.top }, { it.left }))
+                    .joinToString(" ") { it.text.trim() }
             }
             val rigs = panels.flatMapIndexed { index, panel ->
                 rigBuilder.build(index, panel, detectedCharacters = if (panel.width > 0.5f) 1 else 0)
             }
-            val narrationTexts = buildNarration(manga, chapter, panels.size)
-            val estimatedMs = narrationTexts.sumOf { it.length * 55L }.coerceAtLeast(3_000L)
+            val narrationTexts = buildNarration(manga, chapter, panelTexts)
+            val speechRate = settings.speed.coerceIn(0.5f, 2f)
+            val panelDurations = narrationTexts.map { text ->
+                val base = if (text.isBlank()) 1_400L else (text.length * 55L).coerceAtLeast(1_600L)
+                (base / speechRate).toLong().coerceAtLeast(700L)
+            }
+            val estimatedMs = panelDurations.sum().coerceAtLeast(3_000L)
             val plan = AnimationPlan(
                 panels = panels,
                 bubbles = bubbles,
                 rigs = rigs,
-                shots = director.compose(panels, estimatedMs, settings.intensity),
+                shots = director.compose(panels, estimatedMs, effectiveIntensity, panelDurations = panelDurations),
                 rightToLeft = rightToLeft,
                 durationMs = estimatedMs,
-                intensity = settings.intensity,
+                intensity = effectiveIntensity,
                 warnings = if (panels.size <= 1) listOf("This page has no clear gutters; using a single cinematic panel.") else emptyList(),
             )
             val provider = narration.provider(settings.ttsProvider)
@@ -133,11 +184,12 @@ class AnimatedChapterViewModel @Inject constructor(
                 bitmap = bitmap,
                 plan = plan,
                 settings = settings,
-                intensity = settings.intensity,
+                intensity = effectiveIntensity,
                 casting = defaultCasting(voices, rigs.size),
                 voices = voices,
                 playback = PlaybackState(prepared = true, estimatedSeconds = (estimatedMs / 1000).toInt()),
-                subtitle = narrationTexts.firstOrNull().orEmpty(),
+                subtitle = narrationTexts.firstOrNull { it.isNotBlank() }.orEmpty(),
+                narration = narrationTexts,
             )
         }
     }
@@ -174,9 +226,42 @@ class AnimatedChapterViewModel @Inject constructor(
             val provider = narration.provider(current.settings.ttsProvider)
             val manga = current.manga ?: return@launch
             val chapter = current.chapter ?: return@launch
-            val texts = buildNarration(manga, chapter, plan.panelCount)
+            val texts = current.narration.ifEmpty { buildNarration(manga, chapter, List(plan.panelCount) { "" }) }
+            if (!current.settings.narrationEnabled) {
+                texts.forEachIndexed { index, text ->
+                    if (!_state.value.playback.playing) return@launch
+                    _state.value = _state.value.copy(
+                        playback = _state.value.playback.copy(
+                            currentPanel = index,
+                            progress = (index + 1).toFloat() / texts.size.coerceAtLeast(1),
+                        ),
+                        subtitle = text,
+                        activeWord = null,
+                    )
+                    delay(plan.shots.getOrNull(index)?.durationMs ?: 1_600L)
+                }
+                _state.value = _state.value.copy(
+                    playback = _state.value.playback.copy(
+                        playing = false,
+                        progress = 1f,
+                        currentPanel = plan.panelCount - 1,
+                    ),
+                )
+                return@launch
+            }
             texts.forEachIndexed { index, text ->
                 if (!_state.value.playback.playing) return@launch
+                if (text.isBlank()) {
+                    _state.value = _state.value.copy(
+                        playback = _state.value.playback.copy(
+                            currentPanel = index,
+                            progress = index.toFloat() / texts.size.coerceAtLeast(1),
+                        ),
+                        subtitle = "",
+                    )
+                    delay(1_400L)
+                    return@forEachIndexed
+                }
                 _state.value = _state.value.copy(
                     playback = _state.value.playback.copy(
                         currentPanel = index,
@@ -185,14 +270,19 @@ class AnimatedChapterViewModel @Inject constructor(
                     subtitle = text,
                     activeWord = null,
                 )
-                val voiceId = if (index == 0) {
-                    current.casting.narrator.voiceName
+                val castMember = if (index == 0) {
+                    current.casting.narrator
                 } else {
-                    current.casting.characters.getOrNull(index - 1)?.voiceName
+                    current.casting.characters.getOrNull(index - 1) ?: current.casting.narrator
                 }
-                val voice = current.voices.firstOrNull { it.id == voiceId }
+                val voice = current.voices.firstOrNull { it.id == castMember.voiceName }
                 runCatching {
-                    provider.speak(text, voice, current.settings.speed, 1f) { timing ->
+                    provider.speak(
+                        text,
+                        voice,
+                        current.settings.speed * castMember.speed.coerceIn(0.7f, 1.4f),
+                        castMember.pitch.coerceIn(0.6f, 1.6f),
+                    ) { timing ->
                         _state.value = _state.value.copy(activeWord = timing)
                     }
                 }.onFailure { error ->
@@ -222,10 +312,21 @@ class AnimatedChapterViewModel @Inject constructor(
         _state.value = _state.value.copy(
             intensity = intensity,
             plan = plan.copy(
-                shots = director.compose(plan.panels, plan.durationMs, intensity),
+                shots = director.compose(
+                    panels = plan.panels,
+                    narrationMs = plan.durationMs,
+                    intensity = intensity,
+                    panelDurations = plan.shots.map { it.durationMs },
+                ),
                 intensity = intensity,
             ),
         )
+    }
+
+    fun setSpeed(speed: Float) {
+        val settings = _state.value.settings.copy(speed = speed.coerceIn(0.5f, 2f))
+        _state.value = _state.value.copy(settings = settings)
+        viewModelScope.launch { settingsStore.update { it.copy(animatedChapters = settings) } }
     }
 
     fun setProvider(kind: TtsProviderKind) {
@@ -292,21 +393,81 @@ class AnimatedChapterViewModel @Inject constructor(
         )
     }
 
-    private fun buildNarration(manga: Manga, chapter: MangaChapter, panels: Int): List<String> {
+    private fun buildNarration(manga: Manga, chapter: MangaChapter, panelTexts: List<String>): List<String> {
         val base = chapter.title?.takeIf { it.isNotBlank() } ?: "Chapter ${chapter.number}"
-        return (0 until panels).map { index ->
-            when (index) {
-                0 -> "$base. ${manga.title}."
-                else -> "Panel ${index + 1}."
+        val synopsis = manga.description
+            ?.replace(Regex("<[^>]+>"), " ")
+            ?.replace(Regex("""\s+"""), " ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        return panelTexts.mapIndexed { index, raw ->
+            val text = raw.replace(Regex("""\s+"""), " ").trim()
+                .replace(Regex("""^[\p{Punct}\s]+|[\p{Punct}\s]+$"""), "")
+            when {
+                text.isNotBlank() -> text.take(320)
+                index == 0 -> if (synopsis != null) "$base. ${manga.title}. ${synopsis.take(180)}" else "$base. ${manga.title}."
+                else -> ""
             }
         }
     }
 
-    private suspend fun downloadBitmap(url: String): Bitmap? = withContext(Dispatchers.IO) {
+    private suspend fun downloadBitmap(
+        url: String,
+        referer: String?,
+        quality: app.kurenai.core.model.AnimationQuality,
+    ): Bitmap? = withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder().url(url).header("User-Agent", KurenaiHttp.CHROME_UA).build()
-            http.client().newCall(request).execute().use { response ->
-                response.body?.byteStream()?.let { BitmapFactory.decodeStream(it) }
+            val bytes = if (url.startsWith("data:", ignoreCase = true)) {
+                decodeDataUri(url)
+            } else {
+                fetchImage(url, referer) ?: fetchImage(url, null)
+            } ?: return@runCatching null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            val maxDimension = when (quality) {
+                app.kurenai.core.model.AnimationQuality.LOW -> 2048
+                app.kurenai.core.model.AnimationQuality.BALANCED -> 3072
+                app.kurenai.core.model.AnimationQuality.HIGH -> 4096
+                app.kurenai.core.model.AnimationQuality.ULTRA -> 4096
+            }
+            var sample = 1
+            while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) sample *= 2
+            BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inScaled = false
+                },
+            )
+        }.getOrNull()
+    }
+
+
+    private fun fetchImage(url: String, referer: String?): ByteArray? = runCatching {
+        val request = Request.Builder()
+            .url(if (url.startsWith("//")) "https:$url" else url)
+            .header("User-Agent", KurenaiHttp.CHROME_UA)
+            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            .apply { referer?.takeIf { it.isNotBlank() }?.let { header("Referer", it) } }
+            .build()
+        http.client().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) null else response.body?.bytes()
+        }
+    }.getOrNull()
+
+    private fun decodeDataUri(uri: String): ByteArray? {
+        val comma = uri.indexOf(',')
+        if (comma < 0) return null
+        val meta = uri.substring(0, comma)
+        val payload = uri.substring(comma + 1)
+        return runCatching {
+            if (meta.contains(";base64", ignoreCase = true)) {
+                Base64.decode(payload, Base64.DEFAULT)
+            } else {
+                java.net.URLDecoder.decode(payload, "UTF-8").toByteArray()
             }
         }.getOrNull()
     }

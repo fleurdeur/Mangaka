@@ -20,8 +20,7 @@ object ChallengeDetector {
         "checking your browser",
         "cf-browser-verification",
         "cf-challenge",
-        "turnstile",
-        "challenge-platform",
+        "_cf_chl_opt",
         "ddos-guard",
         "enable javascript and cookies to continue",
         "attention required! | cloudflare",
@@ -29,14 +28,21 @@ object ChallengeDetector {
     )
 
     fun isChallenge(response: Response, body: String?): Boolean {
-        if (response.code != 403 && response.code != 503 && response.code != 429) return false
+        if (response.code !in setOf(200, 403, 429, 503)) return false
         val headerHit = response.headers.names().any { it.lowercase() in challengeHeaders } ||
             response.header("Server")?.contains("cloudflare", ignoreCase = true) == true ||
             response.header("cf-ray") != null
-        if (!headerHit) return false
-        if (body.isNullOrBlank()) return true
-        val lower = body.lowercase()
-        return markers.any(lower::contains) || response.code == 403
+        val lower = body.orEmpty().lowercase()
+        // These strings only appear on an interstitial. Generic Cloudflare
+        // snippets ("turnstile", "challenge-platform") are also embedded in
+        // ordinary pages, so they are deliberately not treated as markers.
+        val markerHit = markers.any(lower::contains)
+
+        // Headers alone are enough for an error response, but some proxies strip
+        // Cloudflare's headers and leave only the interstitial page. Markers are
+        // also accepted on a 200 response so an HTML challenge never reaches a
+        // parser as if it were a normal search page.
+        return markerHit || (headerHit && response.code != 200)
     }
 
     fun needsInteraction(body: String?): Boolean {

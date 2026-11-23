@@ -25,6 +25,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.net.UnknownHostException
+import java.util.LinkedHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +35,18 @@ data class SourceSearchChunk(
     val sourceName: String,
     val results: List<Manga>,
     val error: String? = null,
+)
+
+private data class SearchCacheKey(
+    val sourceId: String,
+    val filters: SearchFilters,
+    val offset: Int,
+    val limit: Int,
+)
+
+private data class SearchCacheEntry(
+    val savedAt: Long,
+    val results: List<Manga>,
 )
 
 @Singleton
@@ -45,49 +59,89 @@ class MangaRepository @Inject constructor(
     private val settingsStore: SettingsStore,
     private val eventBus: AppEventBus,
 ) {
+    private val searchCache = object : LinkedHashMap<SearchCacheKey, SearchCacheEntry>(96, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<SearchCacheKey, SearchCacheEntry>?): Boolean =
+            size > 160
+    }
+    private val searchCacheLock = Any()
+
+    private suspend fun <T> withDomainRetry(source: MangaSource, block: suspend () -> T): T {
+        return try {
+            block()
+        } catch (t: Throwable) {
+            if (t.isHostResolutionFailure() && runCatching { source.tryAlternateDomain() }.getOrDefault(false)) {
+                block()
+            } else {
+                throw t
+            }
+        }
+    }
+
+    private fun Throwable.isHostResolutionFailure(): Boolean =
+        generateSequence(this) { it.cause }.any { cause ->
+            cause is UnknownHostException ||
+                cause.message?.contains("unable to resolve host", ignoreCase = true) == true ||
+                cause.message?.contains("no address associated", ignoreCase = true) == true ||
+                cause.message?.contains("nodename nor servname", ignoreCase = true) == true
+        }
+
     fun observeFavorites(): Flow<List<Manga>> = mangaDao.observeFavorites().map { list -> list.map { it.toModel() } }
 
     fun observeCachedManga(): Flow<List<Manga>> = mangaDao.observeFavorites().map { list -> list.map { it.toModel() } }
 
     suspend fun manga(id: String): Manga? = mangaDao.get(id)?.toModel()
 
-    suspend fun search(sourceId: String, filters: SearchFilters, offset: Int, limit: Int): List<Manga> {
-        val source = sourceOf(sourceId) ?: return emptyList()
-        val started = System.currentTimeMillis()
-        return try {
-            val results = source.search(filters, offset, limit)
-            sourceRepository.recordSuccess(sourceId, System.currentTimeMillis() - started)
-            results
-        } catch (t: Throwable) {
-            sourceRepository.recordFailure(sourceId, t.message ?: t::class.simpleName.orEmpty())
-            throw t
+    suspend fun search(sourceId: String, filters: SearchFilters, offset: Int, limit: Int): List<Manga> =
+        withContext(Dispatchers.IO) {
+            val source = sourceOf(sourceId) ?: return@withContext emptyList()
+            val key = SearchCacheKey(sourceId, filters, offset, limit)
+            val now = System.currentTimeMillis()
+            synchronized(searchCacheLock) {
+                searchCache[key]?.let { cached ->
+                    if (now - cached.savedAt < 5 * 60_000L) return@withContext cached.results
+                    searchCache.remove(key)
+                }
+            }
+            val started = System.currentTimeMillis()
+            try {
+                val results = withDomainRetry(source) { source.search(filters, offset, limit) }
+                sourceRepository.recordSuccess(sourceId, System.currentTimeMillis() - started)
+                synchronized(searchCacheLock) {
+                    searchCache[key] = SearchCacheEntry(now, results)
+                }
+                results
+            } catch (t: Throwable) {
+                sourceRepository.recordFailure(sourceId, t.message ?: t::class.simpleName.orEmpty())
+                synchronized(searchCacheLock) { searchCache.keys.removeAll { it.sourceId == sourceId } }
+                throw t
+            }
         }
-    }
 
-    fun searchAll(filters: SearchFilters, limitPerSource: Int = 24, maxSources: Int = 24): Flow<SourceSearchChunk> = channelFlow {
-        val sources = sourceRepository.visibleSources().take(maxSources)
-        val gate = Semaphore(6)
+    fun searchAll(filters: SearchFilters, limitPerSource: Int = 24, maxSources: Int = 30): Flow<SourceSearchChunk> = channelFlow {
+        val sources = sourceRepository.searchCandidates(maxSources)
+        // Ten independent hosts in flight. Per-host politeness is enforced by the
+        // HTTP layer, so this improves aggregate latency without hammering any one
+        // source.
+        val gate = Semaphore(10)
         coroutineScope {
             sources.map { source ->
                 async(Dispatchers.IO) {
                     gate.withPermit {
-                        val started = System.currentTimeMillis()
-                        val result = withTimeoutOrNull(25_000L) {
-                            runCatching { source.search(filters, 0, limitPerSource) }
+                        val result = withTimeoutOrNull(15_000L) {
+                            runCatching { search(source.info.id, filters, 0, limitPerSource) }
                         }
-                        val latency = System.currentTimeMillis() - started
+                        if (result == null) {
+                            sourceRepository.recordFailure(source.info.id, "Search timed out")
+                        }
                         val value = result?.getOrNull()
-                        if (value != null) {
-                            sourceRepository.recordSuccess(source.info.id, latency)
-                        } else if (result != null) {
-                            sourceRepository.recordFailure(source.info.id, result.exceptionOrNull()?.message ?: "timeout")
-                        }
+                        val error = result?.exceptionOrNull()?.message
+                            ?: if (result == null) "Search timed out" else null
                         send(
                             SourceSearchChunk(
                                 source.info.id,
                                 source.info.name,
                                 value.orEmpty(),
-                                result?.exceptionOrNull()?.message,
+                                error,
                             ),
                         )
                     }
@@ -96,12 +150,13 @@ class MangaRepository @Inject constructor(
         }
     }
 
-    suspend fun details(manga: Manga, refresh: Boolean = true): Manga {
-        val source = sourceOf(manga.sourceId) ?: return manga
+    suspend fun details(manga: Manga, refresh: Boolean = true): Manga = withContext(Dispatchers.IO) {
+        val source = sourceOf(manga.sourceId) ?: return@withContext manga
         val remote = if (refresh) {
             val started = System.currentTimeMillis()
             try {
-                source.details(manga).also { sourceRepository.recordSuccess(manga.sourceId, System.currentTimeMillis() - started) }
+                withDomainRetry(source) { source.details(manga) }
+                    .also { sourceRepository.recordSuccess(manga.sourceId, System.currentTimeMillis() - started) }
             } catch (t: Throwable) {
                 sourceRepository.recordFailure(manga.sourceId, t.message ?: "details failed")
                 mangaDao.get(manga.id)?.toModel() ?: manga
@@ -110,7 +165,7 @@ class MangaRepository @Inject constructor(
             mangaDao.get(manga.id)?.toModel() ?: manga
         }
         persist(remote)
-        return remote
+        remote
     }
 
     suspend fun chapters(manga: Manga): List<MangaChapter> = withContext(Dispatchers.IO) {
@@ -118,7 +173,7 @@ class MangaRepository @Inject constructor(
         val remote = if (source != null) {
             val started = System.currentTimeMillis()
             try {
-                source.chapters(manga).also {
+                withDomainRetry(source) { source.chapters(manga) }.also {
                     sourceRepository.recordSuccess(manga.sourceId, System.currentTimeMillis() - started)
                 }
             } catch (t: Throwable) {
@@ -144,7 +199,7 @@ class MangaRepository @Inject constructor(
         val source = sourceOf(chapter.sourceId) ?: return@withContext emptyList()
         val started = System.currentTimeMillis()
         try {
-            source.pages(chapter).also {
+            withDomainRetry(source) { source.pages(chapter) }.also {
                 sourceRepository.recordSuccess(chapter.sourceId, System.currentTimeMillis() - started)
             }
         } catch (t: Throwable) {
@@ -153,7 +208,9 @@ class MangaRepository @Inject constructor(
         }
     }
 
-    suspend fun filterOptions(sourceId: String) = runCatching { sourceOf(sourceId)?.filterOptions() }.getOrNull()
+    suspend fun filterOptions(sourceId: String) = withContext(Dispatchers.IO) {
+        runCatching { sourceOf(sourceId)?.filterOptions() }.getOrNull()
+    }
 
     suspend fun toggleFavorite(manga: Manga) {
         val existing = mangaDao.get(manga.id)

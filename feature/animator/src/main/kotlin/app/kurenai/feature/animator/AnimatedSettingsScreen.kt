@@ -60,14 +60,11 @@ fun AnimatedSettingsScreen(
                 )
             }
             item { ToggleRow("Enable animated chapters", "Show the animate button in the reader", settings.enabled) { value -> viewModel.update { it.copy(enabled = value) } } }
-            item { ToggleRow("Precompute while charging", "Prepare upcoming chapters in the background", settings.autoPrecompute) { value -> viewModel.update { it.copy(autoPrecompute = value) } } }
             item { ToggleRow("Narration", "Speak bubbles and captions", settings.narrationEnabled) { value -> viewModel.update { it.copy(narrationEnabled = value) } } }
             item { ToggleRow("Subtitles", "Show timed captions", settings.subtitles) { value -> viewModel.update { it.copy(subtitles = value) } } }
             item { ToggleRow("Karaoke highlight", "Highlight the spoken word", settings.karaoke) { value -> viewModel.update { it.copy(karaoke = value) } } }
-            item { ToggleRow("Ambient audio", "Soft room tone and page foley", settings.ambientAudio) { value -> viewModel.update { it.copy(ambientAudio = value) } } }
             item { ToggleRow("Reduced motion", "Respect accessibility preferences", settings.reducedMotion) { value -> viewModel.update { it.copy(reducedMotion = value) } } }
             item { ToggleRow("Photosensitivity-safe", "Limit flashes and fast shakes", settings.photosensitivitySafe) { value -> viewModel.update { it.copy(photosensitivitySafe = value) } } }
-            item { ToggleRow("Background only while charging", "Save battery on long sessions", settings.backgroundWhileChargingOnly) { value -> viewModel.update { it.copy(backgroundWhileChargingOnly = value) } } }
             item {
                 Text("Quality", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -110,14 +107,6 @@ fun AnimatedSettingsScreen(
                     value = settings.speed,
                     onValueChange = { value -> viewModel.update { it.copy(speed = value) } },
                     valueRange = 0.5f..2f,
-                )
-            }
-            item {
-                Text("Cache budget: ${settings.cacheBudgetMb} MB", style = MaterialTheme.typography.labelMedium)
-                Slider(
-                    value = settings.cacheBudgetMb.toFloat(),
-                    onValueChange = { value -> viewModel.update { it.copy(cacheBudgetMb = (value / 128).toInt() * 128) } },
-                    valueRange = 128f..4096f,
                 )
             }
             item {

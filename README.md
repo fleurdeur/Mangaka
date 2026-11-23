@@ -56,7 +56,7 @@
 
 <div align="left">
 
-Kurenai can turn a chapter page into a short cinematic sequence: panels are detected, light rigs are generated, a director adds push-ins, pans and parallax, and a real-time OpenGL ES renderer brings the page to life with narration and karaoke subtitles. It runs on-device, is off by default and respects reduced-motion settings.
+Kurenai can turn a chapter page into a short cinematic sequence: panels are detected, light rigs are generated, a director adds push-ins, pans and parallax, and a real-time OpenGL ES renderer brings the page to life with narration and karaoke subtitles. It runs on-device, can be disabled in settings and respects reduced-motion settings.
 
 The pipeline and its current limitations are documented in [docs/ANIMATED_CHAPTERS.md](docs/ANIMATED_CHAPTERS.md).
 

@@ -3,6 +3,7 @@ package app.kurenai.ui
 import android.content.Intent
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,7 +82,11 @@ fun KurenaiApp(
         return
     }
     if (settings.appLockEnabled && !unlocked) {
-        AppLockScreen(onUnlocked = { unlocked = true }, onCancel = { })
+        AppLockScreen(
+            biometricEnabled = settings.biometricLockEnabled,
+            onUnlocked = { unlocked = true },
+            onCancel = { (context as? android.app.Activity)?.finish() },
+        )
         return
     }
 
@@ -88,9 +94,16 @@ fun KurenaiApp(
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStack?.destination?.route
     val topLevel = currentRoute in setOf(ROUTE_LIBRARY, ROUTE_BROWSE, ROUTE_UPDATES, ROUTE_MORE)
+    // The reader and animated player draw edge-to-edge on purpose. Every other
+    // destination gets the system bars from the shell so no screen can slip under
+    // the status bar. Inner Scaffolds consume the same insets instead of adding
+    // a second layer.
+    val immersive = currentRoute?.startsWith("reader/") == true ||
+        currentRoute?.startsWith("animated/") == true
 
     Scaffold(
-        contentWindowInsets = if (topLevel) WindowInsets.safeDrawing else WindowInsets(0, 0, 0, 0),
+        containerColor = Color.Transparent,
+        contentWindowInsets = if (immersive) WindowInsets(0, 0, 0, 0) else WindowInsets.safeDrawing,
         bottomBar = {
             if (topLevel) {
                 NavigationBar {
@@ -105,7 +118,7 @@ fun KurenaiApp(
         NavHost(
             navController = navController,
             startDestination = ROUTE_LIBRARY,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
         ) {
             composable(ROUTE_LIBRARY) {
                 LibraryScreen(

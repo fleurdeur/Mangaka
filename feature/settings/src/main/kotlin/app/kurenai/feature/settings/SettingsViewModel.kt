@@ -32,5 +32,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setThemeMode(mode: ThemeMode) = update { it.copy(theme = it.theme.copy(mode = mode)) }
-    fun setPalette(palette: Palette) = update { it.copy(theme = it.theme.copy(palette = palette)) }
+    fun setPalette(palette: Palette) = update {
+        // Choosing a named palette is an explicit override of Monet colors.
+        it.copy(theme = it.theme.copy(palette = palette, dynamicColor = palette == Palette.MONET))
+    }
 }

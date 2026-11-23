@@ -11,6 +11,8 @@ import app.kurenai.core.model.LibraryEntry
 import app.kurenai.core.model.Manga
 import app.kurenai.core.model.ReadingStats
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +42,7 @@ class LibraryViewModel @Inject constructor(
     private val query = MutableStateFlow("")
     private val selectedCategory = MutableStateFlow<Long?>(null)
     private val searchResults = MutableStateFlow<List<Manga>>(emptyList())
+    private var searchJob: Job? = null
 
     val uiState: StateFlow<LibraryUiState> = combine(
         libraryRepository.favorites,
@@ -66,14 +69,15 @@ class LibraryViewModel @Inject constructor(
 
     fun setQuery(value: String) {
         query.value = value
-        viewModelScope.launch {
-            if (value.isBlank()) {
-                searchResults.value = emptyList()
-            } else {
-                searchResults.value = searchRepository.search(value).let { flow ->
-                    flow.first()
-                }
-            }
+        searchJob?.cancel()
+        if (value.isBlank()) {
+            searchResults.value = emptyList()
+            return
+        }
+        searchJob = viewModelScope.launch {
+            // Debounce keystrokes, then run the FTS query off the main thread.
+            delay(140)
+            searchResults.value = searchRepository.search(value).first()
         }
     }
 

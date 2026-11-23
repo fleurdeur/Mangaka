@@ -96,11 +96,14 @@ class WebViewChallengeSolver(
                     val cookies = CookieManager.getInstance().getCookie(url).orEmpty()
                     val title = wv.title.orEmpty()
                     lastBody = title
-                    if (cookies.contains("cf_clearance") || cookies.contains("__cf_bm") || title.contains("Just a moment", true).not() && title.isNotBlank()) {
-                        if (cookies.isNotBlank()) {
-                            NetworkLog.debug("challenge", "hidden challenge passed for $host")
-                            return@withContext ChallengeSolution(true, cookies, userAgent)
-                        }
+                    val clearance = cookies.contains("cf_clearance") ||
+                        cookies.contains("__cf_bm") ||
+                        cookies.contains("ddos-guard")
+                    val titleReady = title.contains("Just a moment", true).not() && title.isNotBlank()
+                    if (clearance || (titleReady && cookies.isNotBlank())) {
+                        NetworkLog.debug("challenge", "hidden challenge passed for $host")
+                        runCatching { CookieManager.getInstance().flush() }
+                        return@withContext ChallengeSolution(true, cookies, userAgent)
                     }
                     if (ChallengeDetector.needsInteraction(title)) {
                         return@withContext ChallengeSolution(false, cookies, userAgent, error = "needs_interaction")
@@ -119,8 +122,12 @@ class WebViewChallengeSolver(
     private suspend fun collect(url: String, userAgent: String, interactive: Boolean): ChallengeSolution =
         withContext(Dispatchers.Main.immediate) {
             val cookies = CookieManager.getInstance().getCookie(url).orEmpty()
+            runCatching { CookieManager.getInstance().flush() }
             NetworkLog.debug("challenge", "collected ${cookies.length} cookie chars for ${runCatching { java.net.URI(url).host }.getOrNull()}")
-            ChallengeSolution(cookies.contains("cf_clearance") || cookies.isNotBlank(), cookies, userAgent, interactive)
+            val clearance = cookies.contains("cf_clearance") ||
+                cookies.contains("__cf_bm") ||
+                cookies.contains("ddos-guard")
+            ChallengeSolution(clearance, cookies, userAgent, interactive, error = if (clearance) null else "clearance_cookie_missing")
         }
 
     @SuppressLint("SetJavaScriptEnabled")

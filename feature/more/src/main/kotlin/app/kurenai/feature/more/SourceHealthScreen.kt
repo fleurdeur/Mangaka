@@ -71,6 +71,7 @@ fun SourceHealthScreen(
                 Text("Source health", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("${state.sources.size} built-in parsers · ${state.sources.count { it.health == SourceHealth.HEALTHY }} healthy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            TextButton(onClick = viewModel::repairSources) { Text("Repair") }
             TextButton(onClick = { viewModel.setAdultUnlocked(!state.settings.adultContentUnlocked) }) {
                 Text(if (state.settings.adultContentUnlocked) "Lock 18+" else "Unlock 18+")
             }

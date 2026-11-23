@@ -22,7 +22,9 @@ class BackoffInterceptor(
         var response = chain.proceed(chain.request())
         while (attempt < maxRetries && (response.code == 429 || response.code == 503)) {
             val retryAfter = response.header("Retry-After")?.toLongOrNull()?.times(1000L)
-            val wait = retryAfter ?: ((baseDelayMs shl attempt) + kotlin.random.Random.nextLong(0, 400))
+            // Never sleep for an hour because a source sent an absurd header.
+            val wait = (retryAfter ?: ((baseDelayMs shl attempt) + kotlin.random.Random.nextLong(0, 400)))
+                .coerceIn(300L, 10_000L)
             NetworkLog.debug("backoff", "HTTP ${response.code}, retrying in ${wait}ms (${attempt + 1}/$maxRetries)")
             response.close()
             Thread.sleep(wait)

@@ -8,12 +8,12 @@ Animated chapters are a local, transformative presentation layer. They do not ge
 | --- | --- | --- |
 | Page load | Shared OkHttp client, first page bitmap | Working |
 | Panel detection | Downsample → gutter luma/variance runs → column runs → RTL order → min-area filter | Working |
-| Bubble detection | Conservative caption regions; OCR text is supplied by `feature:translation` | Partial |
+| Bubble detection | ML Kit OCR lines assigned to their containing panel | Working |
 | OCR | ML Kit text recognition in the translation feature | Working |
 | Character rigs | Lightweight head/torso/arms/hair rectangles generated from panel geometry | Working (heuristic) |
 | Director | Push-in, pan, parallax, shake, cut/dissolve/slide transitions | Working |
-| Renderer | OpenGL ES 2.0, 24×24 displaced mesh, vignette, 60 fps target | Working |
-| Narration | Android TTS, offline pack adapter, VoiceStudio bridge | Working |
+| Renderer | OpenGL ES 2.0, cached 24×24 mesh, safe vignette, 60 fps target | Working |
+| Narration | Real page OCR text, best available voice, Android TTS / offline pack / VoiceStudio bridge | Working |
 | Word timing | `UtteranceProgressListener.onRangeStart` where supported | Working |
 | Subtitles / karaoke | Compose overlay with active-word highlight | Working |
 | Voice casting | Narrator + per-character voice and pitch assignment | Working |
@@ -30,7 +30,7 @@ Animated chapters are a local, transformative presentation layer. They do not ge
 
 ## Director
 
-`Director.compose` divides narration time across panels and chooses transition types from panel aspect and index. `MotionIntensity.STILL` disables all movement. `reducedMotion` and `photosensitivitySafe` are checked before playback and clamp shake/flash.
+`Director.compose` uses each panel's narration duration, so camera and voice stay aligned, and chooses transition types from panel aspect and index. `MotionIntensity.STILL` disables all movement. `reducedMotion` and `photosensitivitySafe` are checked before playback and clamp shake/flash.
 
 ## Narration and casting
 
@@ -43,9 +43,9 @@ No TTS provider is bundled with cloud credentials. Nothing is sent to a third pa
 ## Performance
 
 - One page is processed at a time; results can be cached per chapter.
-- The GL mesh is rebuilt per frame but is intentionally small (625 vertices).
+- The GL mesh is built once (625 vertices) and reused every frame.
 - Processing runs off the main thread; the UI shows progress.
-- Cache budget and charging-only precompute are configurable.
+- Decoded pages are capped by the quality setting and the GPU texture limit.
 
 ## Limitations
 
@@ -59,5 +59,5 @@ No TTS provider is bundled with cloud credentials. Nothing is sent to a third pa
 
 - Only process media the user has lawful access to.
 - Exports are personal-use only and must not be redistributed.
-- The feature is off by default and can be disabled entirely.
+- The feature is enabled in settings and can be disabled entirely.
 - Reduced motion and photosensitivity options take precedence over cinematic settings.

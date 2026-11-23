@@ -11,6 +11,7 @@ import app.kurenai.feature.animator.model.CameraShot
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.nio.ShortBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -20,8 +21,8 @@ import javax.microedition.khronos.opengles.GL10
  * breathing/head-sway deformation plus a light vignette. 60 fps target.
  */
 class AnimRenderer(
-    private val bitmap: Bitmap?,
-    initialPlan: AnimationPlan?,
+    initialBitmap: Bitmap? = null,
+    initialPlan: AnimationPlan? = null,
 ) : GLSurfaceView.Renderer {
 
     private var program = 0
@@ -31,14 +32,41 @@ class AnimRenderer(
     private var uTime = 0
     private var uRect = 0
     private var uIntensity = 0
+    @Volatile
+    private var bitmap: Bitmap? = initialBitmap
+    @Volatile
     private var plan: AnimationPlan? = initialPlan
+    @Volatile
+    private var textureDirty = true
     private var startedAt = System.nanoTime()
     @Volatile var playing: Boolean = true
     @Volatile var playheadMs: Long = 0L
     private val segments = 24
+    private var meshPositions: FloatBuffer? = null
+    private var meshUvs: FloatBuffer? = null
+    private var meshIndices: ShortBuffer? = null
+    private var meshIndexCount = 0
 
-    fun updatePlan(plan: AnimationPlan?) { this.plan = plan }
+    fun updateBitmap(value: Bitmap?) {
+        if (bitmap === value) return
+        bitmap = value
+        textureDirty = true
+        reset()
+    }
+
+    fun updatePlan(value: AnimationPlan?) {
+        val firstPlan = plan == null && value != null
+        plan = value
+        if (firstPlan) reset()
+    }
+
     fun reset() { startedAt = System.nanoTime(); playheadMs = 0L }
+
+    fun focusPanel(index: Int) {
+        val shot = plan?.shots?.getOrNull(index) ?: return
+        playheadMs = shot.startMs
+        startedAt = System.nanoTime() - shot.startMs * 1_000_000L
+    }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         program = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -57,6 +85,11 @@ class AnimRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        if (textureDirty) {
+            if (texture != 0) GLES20.glDeleteTextures(1, intArrayOf(texture), 0)
+            texture = loadTexture(bitmap ?: createFallback())
+            textureDirty = false
+        }
         if (playing) {
             playheadMs = (System.nanoTime() - startedAt) / 1_000_000L
         }
@@ -82,10 +115,26 @@ class AnimRenderer(
                 MotionIntensity.FULL -> 1f
             },
         )
-        drawMesh(progress, plan)
+        drawMesh()
     }
 
-    private fun drawMesh(progress: Float, plan: AnimationPlan) {
+    private fun drawMesh() {
+        ensureMesh()
+        val positions = meshPositions ?: return
+        val uvs = meshUvs ?: return
+        val indices = meshIndices ?: return
+        GLES20.glEnableVertexAttribArray(aPos)
+        GLES20.glVertexAttribPointer(aPos, 3, GLES20.GL_FLOAT, false, 0, positions)
+        GLES20.glEnableVertexAttribArray(aUv)
+        GLES20.glVertexAttribPointer(aUv, 2, GLES20.GL_FLOAT, false, 0, uvs)
+        GLES20.glDrawElements(GLES20.GL_TRIANGLES, meshIndexCount, GLES20.GL_UNSIGNED_SHORT, indices)
+        GLES20.glDisableVertexAttribArray(aPos)
+        GLES20.glDisableVertexAttribArray(aUv)
+    }
+
+    /** The mesh never changes; build its buffers once instead of every frame. */
+    private fun ensureMesh() {
+        if (meshIndices != null) return
         val count = (segments + 1) * (segments + 1)
         val vertices = FloatArray(count * 3)
         val uvs = FloatArray(count * 2)
@@ -118,16 +167,11 @@ class AnimRenderer(
                 indices[ii++] = bottomRight
             }
         }
-        val vBuf = vertices.toBuffer()
-        val uBuf = uvs.toBuffer()
-        val iBuf = ByteBuffer.allocateDirect(indices.size * 2).order(ByteOrder.nativeOrder()).asShortBuffer().put(indices).also { it.position(0) }
-        GLES20.glEnableVertexAttribArray(aPos)
-        GLES20.glVertexAttribPointer(aPos, 3, GLES20.GL_FLOAT, false, 0, vBuf)
-        GLES20.glEnableVertexAttribArray(aUv)
-        GLES20.glVertexAttribPointer(aUv, 2, GLES20.GL_FLOAT, false, 0, uBuf)
-        GLES20.glDrawElements(GLES20.GL_TRIANGLES, indices.size, GLES20.GL_UNSIGNED_SHORT, iBuf)
-        GLES20.glDisableVertexAttribArray(aPos)
-        GLES20.glDisableVertexAttribArray(aUv)
+        meshPositions = vertices.toBuffer()
+        meshUvs = uvs.toBuffer()
+        meshIndices = ByteBuffer.allocateDirect(indices.size * 2).order(ByteOrder.nativeOrder())
+            .asShortBuffer().put(indices).also { it.position(0) }
+        meshIndexCount = indices.size
     }
 
     private fun shotAt(plan: AnimationPlan, timeMs: Long): CameraShot? =
@@ -135,7 +179,23 @@ class AnimRenderer(
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
-    private fun loadTexture(bitmap: Bitmap): Int {
+    private fun loadTexture(source: Bitmap): Int {
+        // Webtoon pages are frequently taller than the 4096px mobile GPU texture
+        // limit, which makes texImage2D fail and leaves the screen black. Scale
+        // only when the GPU would reject the texture; normal manga pages stay at
+        // their original resolution.
+        val max = 4096
+        val scale = minOf(1f, max.toFloat() / source.width.coerceAtLeast(1), max.toFloat() / source.height.coerceAtLeast(1))
+        val upload = if (scale < 0.999f) {
+            Bitmap.createScaledBitmap(
+                source,
+                (source.width * scale).toInt().coerceAtLeast(1),
+                (source.height * scale).toInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            source
+        }
         val ids = IntArray(1)
         GLES20.glGenTextures(1, ids, 0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
@@ -143,7 +203,8 @@ class AnimRenderer(
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, upload, 0)
+        if (upload !== source) upload.recycle()
         return ids[0]
     }
 
@@ -191,6 +252,9 @@ class AnimRenderer(
                 p.x += sin(uTime * 1.1 + aPos.y *
 2.2) * 0.006 * uIntensity * weight;
                 p.y += sin(uTime * 1.7) * 0.0035 * uIntensity;
+                // The mesh maps the screen's top-left vertex to uRect.xy, which
+                // is the panel's top-left in bitmap space. Keep V unflipped:
+                // GLUtils uploads Bitmap row 0 at texture V=0.
                 vUv = mix(uRect.xy, uRect.zw, aUv);
                 vLuma = 0.5 + 0.5 * aPos.y;
                 gl_Position = vec4(p, 1.0);
@@ -203,8 +267,10 @@ class AnimRenderer(
             uniform sampler2D uTexture;
             void main() {
                 vec4 color = texture2D(uTexture, vUv);
-                float vignette = smoothstep(0.85, 0.2, distance(vUv, vec2(0.5)));
-                color.rgb *= mix(0.72, 1.04, vignette * vLuma);
+                // smoothstep requires edge0 < edge1; the old reversed edges are
+                // undefined in GLSL and can produce black frames on some GPUs.
+                float vignette = 1.0 - smoothstep(0.22, 0.92, distance(vUv, vec2(0.5)));
+                color.rgb *= mix(0.74, 1.04, vignette);
                 gl_FragColor = color;
             }
         """
@@ -216,5 +282,10 @@ class AnimatedGLSurfaceView(context: Context, renderer: AnimRenderer) : GLSurfac
         setEGLContextClientVersion(2)
         setRenderer(renderer)
         renderMode = RENDERMODE_CONTINUOUSLY
+    }
+
+    fun setAnimating(animating: Boolean) {
+        renderMode = if (animating) RENDERMODE_CONTINUOUSLY else RENDERMODE_WHEN_DIRTY
+        if (!animating) requestRender()
     }
 }

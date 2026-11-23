@@ -18,7 +18,11 @@ class PanelDetector(
         val scale = 320f / bitmap.width.coerceAtLeast(1)
         val width = 320
         val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
-        val small = Bitmap.createScaledBitmap(bitmap, width, height, true)
+        val small = if (bitmap.width == width && bitmap.height == height) {
+            bitmap
+        } else {
+            Bitmap.createScaledBitmap(bitmap, width, height, true)
+        }
         val pixels = IntArray(width * height)
         small.getPixels(pixels, 0, width, 0, 0, width, height)
         val luma = IntArray(pixels.size) { index ->
@@ -45,7 +49,7 @@ class PanelDetector(
                 }
             }
         }
-        small.recycle()
+        if (small !== bitmap) small.recycle()
         if (panels.isEmpty()) {
             return listOf(PanelRect(0f, 0f, 1f, 1f, 0))
         }

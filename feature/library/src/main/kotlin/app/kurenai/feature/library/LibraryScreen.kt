@@ -1,6 +1,7 @@
 package app.kurenai.feature.library
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,8 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +40,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,13 +86,19 @@ fun LibraryScreen(
         }
 
         if (state.continueReading.isNotEmpty()) {
-            SectionHeader("Continue reading")
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(state.continueReading, key = { it.manga.id }) { item ->
-                    ContinueCard(item) { onContinueReading(item) }
+            FeaturedContinueCard(
+                item = state.continueReading.first(),
+                onClick = { onContinueReading(state.continueReading.first()) },
+            )
+            if (state.continueReading.size > 1) {
+                SectionHeader("Also in progress")
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(state.continueReading.drop(1), key = { it.manga.id }) { item ->
+                        ContinueCard(item) { onContinueReading(item) }
+                    }
                 }
             }
         }
@@ -151,6 +162,71 @@ fun LibraryScreen(
                     MangaGridCard(entry.manga, { onMangaClick(entry.manga) })
                 }
                 item { AddCategoryCard { viewModel.createCategory("New shelf") } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeaturedContinueCard(item: ContinueReadingItem, onClick: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+            .height(204.dp)
+            .clip(RoundedCornerShape(26.dp)),
+    ) {
+        CoverImage(
+            url = item.manga.largeCoverUrl ?: item.manga.coverUrl,
+            contentDescription = item.manga.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.08f),
+                    0.5f to Color.Black.copy(alpha = 0.42f),
+                    1f to Color.Black.copy(alpha = 0.92f),
+                ),
+            ),
+        )
+        Column(
+            Modifier.fillMaxSize().padding(18.dp),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            Text(
+                "CONTINUE READING",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFFFD9A0),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                item.manga.title,
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                item.chapter?.displayTitle ?: "Start from the beginning",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.78f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LinearProgressIndicator(
+                    progress = { item.fraction },
+                    modifier = Modifier.weight(1f).height(5.dp).clip(CircleShape),
+                    color = Color(0xFFFFD9A0),
+                    trackColor = Color.White.copy(alpha = 0.22f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Button(onClick = onClick) {
+                    Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Resume")
+                }
             }
         }
     }

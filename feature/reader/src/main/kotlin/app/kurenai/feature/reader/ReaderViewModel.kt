@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kurenai.core.data.MangaRepository
 import app.kurenai.core.data.ReaderRepository
+import app.kurenai.core.datastore.SettingsStore
 import app.kurenai.core.model.Manga
 import app.kurenai.core.model.MangaChapter
 import app.kurenai.core.model.MangaPage
@@ -34,6 +35,7 @@ data class ReaderUiState(
     val autoScrolling: Boolean = false,
     val prefetchPages: Int = 2,
     val translationVisible: Boolean = false,
+    val animatedEnabled: Boolean = false,
 ) {
     val nextChapter: MangaChapter? get() = chapter?.let { current -> chapters.sortedBy { it.number }.firstOrNull { it.number > current.number } }
     val previousChapter: MangaChapter? get() = chapter?.let { current -> chapters.sortedByDescending { it.number }.firstOrNull { it.number < current.number } }
@@ -45,6 +47,7 @@ class ReaderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val mangaRepository: MangaRepository,
     private val readerRepository: ReaderRepository,
+    private val settingsStore: SettingsStore,
 ) : ViewModel() {
     private val mangaId: String = savedStateHandle["mangaId"] ?: ""
     private val chapterId: String = savedStateHandle["chapterId"] ?: ""
@@ -68,6 +71,7 @@ class ReaderViewModel @Inject constructor(
                 return@launch
             }
             val settings = readerRepository.settingsFor(mangaId)
+            val appSettings = settingsStore.settings.first()
             val chapters = mangaRepository.chapters(manga)
             val pages = readerRepository.pages(chapter)
             val history = mangaRepository.historyFor(mangaId)
@@ -79,6 +83,7 @@ class ReaderViewModel @Inject constructor(
                 pages = pages,
                 loading = false,
                 settings = settings,
+                animatedEnabled = appSettings.animatedChapters.enabled,
                 initialPage = initial,
                 currentPage = initial,
                 error = if (pages.isEmpty()) "No pages returned for this chapter." else null,

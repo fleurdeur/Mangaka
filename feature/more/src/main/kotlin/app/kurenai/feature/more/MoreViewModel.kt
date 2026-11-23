@@ -113,6 +113,11 @@ class MoreViewModel @Inject constructor(
         message.value = "Health reset for $id"
     }
 
+    fun repairSources() = viewModelScope.launch {
+        val count = sourceRepository.repairAutoDisabled()
+        message.value = if (count == 0) "No automatically disabled sources to repair." else "Re-enabled $count sources. Try them again."
+    }
+
     fun clearCookies() {
         http.cookieJar().clear()
         message.value = "Cleared encrypted cookies for all domains"

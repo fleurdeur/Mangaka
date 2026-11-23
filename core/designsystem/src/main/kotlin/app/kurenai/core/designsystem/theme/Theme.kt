@@ -53,8 +53,19 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = KurenaiPalette.Mocha,
     onSurfaceVariant = KurenaiPalette.Latte,
     outline = Color(0xFF9A7F77),
+    outlineVariant = Color(0xFF4B373B),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
+    surfaceDim = Color(0xFF140D0F),
+    surfaceBright = Color(0xFF4A363A),
+    surfaceContainerLowest = KurenaiPalette.Ink,
+    surfaceContainerLow = Color(0xFF211619),
+    surfaceContainer = KurenaiPalette.Coffee,
+    surfaceContainerHigh = KurenaiPalette.Mocha,
+    surfaceContainerHighest = Color(0xFF453136),
+    inverseSurface = KurenaiPalette.Cream,
+    inverseOnSurface = KurenaiPalette.Ink,
+    inversePrimary = KurenaiPalette.CrimsonDark,
 )
 
 private val LightColors = lightColorScheme(
@@ -75,6 +86,17 @@ private val LightColors = lightColorScheme(
     surfaceVariant = Color(0xFFF4DED8),
     onSurfaceVariant = Color(0xFF52443F),
     outline = Color(0xFF84736D),
+    outlineVariant = Color(0xFFD7C2BC),
+    surfaceDim = Color(0xFFE8D6D0),
+    surfaceBright = Color(0xFFFFF8F5),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFFFFBF8),
+    surfaceContainer = Color(0xFFF9ECE7),
+    surfaceContainerHigh = Color(0xFFF2E2DC),
+    surfaceContainerHighest = Color(0xFFEBD9D3),
+    inverseSurface = Color(0xFF362E2C),
+    inverseOnSurface = Color(0xFFFBEEE9),
+    inversePrimary = KurenaiPalette.CrimsonLight,
 )
 
 @Composable
@@ -89,7 +111,7 @@ fun KurenaiTheme(
     }
     val context = LocalContext.current
     val base = when {
-        theme.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && theme.palette == Palette.MONET ->
+        theme.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         dark -> DarkColors
         else -> LightColors

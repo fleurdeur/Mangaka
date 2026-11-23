@@ -20,6 +20,8 @@ data class VoiceOption(
     val language: String,
     val gender: String = "unknown",
     val isNeural: Boolean = false,
+    val quality: Int = 0,
+    val requiresNetwork: Boolean = false,
 )
 
 data class WordTiming(val word: String, val startMs: Long, val endMs: Long)
@@ -46,14 +48,20 @@ class AndroidTtsProvider(private val context: Context) : NarrationProvider {
 
     override suspend fun voices(): List<VoiceOption> {
         ensureReady()
-        return tts?.voices.orEmpty().take(40).map { voice ->
+        return tts?.voices.orEmpty().map { voice ->
             VoiceOption(
                 id = voice.name,
                 name = voice.name.substringAfterLast('/').replace('_', ' '),
                 language = voice.locale.toLanguageTag(),
                 isNeural = voice.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS) == true,
+                quality = voice.quality,
+                requiresNetwork = voice.isNetworkConnectionRequired,
             )
-        }
+        }.sortedWith(
+            compareByDescending<VoiceOption> { it.isNeural }
+                .thenByDescending { !it.requiresNetwork }
+                .thenByDescending { it.quality },
+        ).take(40)
     }
 
     override suspend fun speak(
@@ -65,9 +73,10 @@ class AndroidTtsProvider(private val context: Context) : NarrationProvider {
     ): Boolean {
         ensureReady()
         val engine = tts ?: return false
-        voice?.let { option ->
-            engine.voices.firstOrNull { it.name == option.id }?.let { engine.voice = it }
-        }
+        val available = engine.voices.orEmpty()
+        val chosen = voice?.let { option -> available.firstOrNull { it.name == option.id } }
+            ?: available.filter { !it.isNetworkConnectionRequired }.maxByOrNull { it.quality }
+        chosen?.let { engine.voice = it }
         engine.setSpeechRate(rate.coerceIn(0.4f, 2.5f))
         engine.setPitch(pitch.coerceIn(0.4f, 2.0f))
         val id = UUID.randomUUID().toString()

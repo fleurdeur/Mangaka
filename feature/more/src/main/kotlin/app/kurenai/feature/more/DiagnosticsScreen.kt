@@ -74,7 +74,7 @@ fun DiagnosticsScreen(
         }
         item {
             ToggleRow("Automatic challenge handling", state.settings.challengeHandlingEnabled) { viewModel.setChallengeHandling(it) }
-            ToggleRow("DNS-over-HTTPS (Cloudflare)", state.settings.dohEnabled) { viewModel.setDoh(it) }
+            ToggleRow("Encrypted DNS (DoH)", state.settings.dohEnabled) { viewModel.setDoh(it) }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

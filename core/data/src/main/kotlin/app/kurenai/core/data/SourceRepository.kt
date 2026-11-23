@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -75,6 +76,50 @@ class SourceRepository @Inject constructor(
     }
 
     suspend fun allSources(): List<MangaSource> = withContext(Dispatchers.Default) { registry.sources }
+
+    /**
+     * Sources worth asking first for a global search. Healthy sources in the
+     * device language come first, dead/disabled ones are skipped, and the list is
+     * capped before any network work starts. This is the main reason a search
+     * across dozens of parsers can finish in seconds instead of half a minute.
+     */
+    suspend fun searchCandidates(limit: Int): List<MangaSource> = withContext(Dispatchers.Default) {
+        val prefs = preferences.first()
+        val healthMap = health.first()
+        val deviceLanguage = Locale.getDefault().language.lowercase()
+        registry.sources.asSequence()
+            .filter { source ->
+                val record = healthMap[source.info.id]
+                val health = record?.health ?: source.info.health
+                source.info.id !in prefs.disabledSourceIds &&
+                    health != SourceHealth.DISABLED &&
+                    source.info.health != SourceHealth.BROKEN &&
+                    (prefs.enabledLanguages.isEmpty() || source.info.language in prefs.enabledLanguages || source.info.language.isBlank()) &&
+                    (prefs.enabledKinds.isEmpty() || source.info.kind in prefs.enabledKinds) &&
+                    (!source.info.nsfw || ContentRating.ADULT in prefs.enabledRatings) &&
+                    (!prefs.showOnlyHealthy || health == SourceHealth.HEALTHY || health == SourceHealth.UNKNOWN)
+            }
+            .sortedWith(
+                compareBy<MangaSource> {
+                    val record = healthMap[it.info.id]
+                    when (record?.health ?: it.info.health) {
+                        SourceHealth.HEALTHY -> 0
+                        SourceHealth.UNKNOWN -> 1
+                        SourceHealth.DEGRADED -> 2
+                        SourceHealth.BROKEN, SourceHealth.DISABLED -> 3
+                    }
+                }.thenBy { source ->
+                    // Prefer the user's language, then English as a useful fallback.
+                    when {
+                        source.info.language == deviceLanguage -> 0
+                        source.info.language == "en" -> 1
+                        else -> 2
+                    }
+                }.thenBy { it.info.name.lowercase() },
+            )
+            .take(limit)
+            .toList()
+    }
 
     suspend fun source(id: String): MangaSource? = withContext(Dispatchers.Default) { registry.source(id) }
 
@@ -146,6 +191,20 @@ class SourceRepository @Inject constructor(
         val previous = healthDao.get(sourceId) ?: SourceHealthEntity(sourceId)
         healthDao.upsert(SourceHealthEntity(sourceId))
         settingsStore.updateSources { it.copy(disabledSourceIds = it.disabledSourceIds - sourceId) }
+    }
+
+    /**
+     * Re-enable every source that Kurenai disabled automatically. Sources the
+     * user disabled by hand are left alone.
+     */
+    suspend fun repairAutoDisabled(): Int {
+        val records = health.first().values.filter { it.disabledAutomatically }
+        if (records.isEmpty()) return 0
+        records.forEach { healthDao.upsert(SourceHealthEntity(it.sourceId)) }
+        val ids = records.mapTo(mutableSetOf()) { it.sourceId }
+        settingsStore.updateSources { prefs -> prefs.copy(disabledSourceIds = prefs.disabledSourceIds - ids) }
+        eventBus.emit(AppEvent.SourcesChanged)
+        return ids.size
     }
 
     fun catalog(): SourceCatalog = SourceCatalog(

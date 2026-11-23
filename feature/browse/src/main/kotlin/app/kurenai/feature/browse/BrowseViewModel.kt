@@ -62,7 +62,7 @@ class BrowseViewModel @Inject constructor(
     }
 
     fun selectSource(id: String) {
-        _state.value = _state.value.copy(selectedSourceId = id, results = emptyList(), error = null, page = 0)
+        _state.value = _state.value.copy(selectedSourceId = id, searchAllSources = false, results = emptyList(), sourceChunks = emptyList(), error = null, page = 0)
         loadOptions(id)
     }
 
@@ -127,13 +127,19 @@ class BrowseViewModel @Inject constructor(
         searchJob = viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null, sourceChunks = emptyList(), results = emptyList())
             val chunks = mutableListOf<SourceSearchChunk>()
-            mangaRepository.searchAll(current.filters, limitPerSource = 20, maxSources = 30).collect { chunk ->
-                chunks += chunk
-                _state.value = _state.value.copy(
-                    sourceChunks = chunks.toList(),
-                    results = chunks.flatMap { it.results }.distinctBy { it.id },
-                    loading = true,
-                )
+            runCatching {
+                mangaRepository.searchAll(current.filters, limitPerSource = 20, maxSources = 30).collect { chunk ->
+                    chunks += chunk
+                    _state.value = _state.value.copy(
+                        sourceChunks = chunks.sortedByDescending { it.results.size },
+                        results = chunks.flatMap { it.results }.distinctBy { it.id },
+                        loading = true,
+                    )
+                }
+            }.onFailure { error ->
+                if (error !is kotlinx.coroutines.CancellationException) {
+                    _state.value = _state.value.copy(error = error.message ?: "Search failed")
+                }
             }
             _state.value = _state.value.copy(loading = false)
         }

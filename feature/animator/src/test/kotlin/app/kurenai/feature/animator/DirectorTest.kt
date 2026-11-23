@@ -47,6 +47,21 @@ class DirectorTest {
     }
 
     @Test
+    fun `panel durations follow narration timing`() {
+        val durations = listOf(2_400L, 1_100L, 3_800L)
+        val shots = Director().compose(
+            panels = panels,
+            narrationMs = durations.sum(),
+            intensity = MotionIntensity.SUBTLE,
+            panelDurations = durations,
+        )
+        assertEquals(durations, shots.map { it.durationMs })
+        assertEquals(0L, shots[0].startMs)
+        assertEquals(2_400L, shots[1].startMs)
+        assertEquals(3_500L, shots[2].startMs)
+    }
+
+    @Test
     fun `empty input is safe`() {
         assertTrue(Director().compose(emptyList(), 1_000, MotionIntensity.CINEMATIC).isEmpty())
     }

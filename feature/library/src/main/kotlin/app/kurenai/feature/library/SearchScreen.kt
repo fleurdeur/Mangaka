@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -26,6 +27,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,11 +69,22 @@ fun SearchScreen(
                 TextButton(onClick = { viewModel.search() }) { Text("Go") }
             },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
         )
         Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(onClick = { viewModel.search() }, label = { Text("Library") })
             AssistChip(onClick = { viewModel.search(includeSources = true) }, label = { Text("Library + sources") })
             if (recent.isNotEmpty()) TextButton(onClick = { viewModel.clearHistory() }) { Text("Clear history") }
+        }
+        if (searching && results.isNotEmpty()) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp))
+            Text(
+                "Searching sources as they answer…",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
         }
         if (recent.isNotEmpty() && query.isBlank()) {
             Column(Modifier.padding(horizontal = 20.dp)) {
@@ -84,7 +99,7 @@ fun SearchScreen(
             }
         }
         when {
-            searching -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
+            searching && results.isEmpty() -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
             results.isEmpty() -> EmptyState(
                 title = "Describe what you want",
                 message = "Ask in plain language. Kurenai matches titles, tags, authors and reading state locally.",

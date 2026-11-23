@@ -9,6 +9,7 @@ import app.kurenai.core.network.KurenaiHttp
 import app.kurenai.core.network.challenge.InteractiveChallenge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -25,6 +26,11 @@ class AppShellViewModel @Inject constructor(
 
     val settings: StateFlow<AppSettings> = settingsStore.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+
+    /** False until the first persisted settings snapshot is available. */
+    val ready: StateFlow<Boolean> = settingsStore.settings
+        .map { true }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val sourcePreferences: StateFlow<SourcePreferences> = settingsStore.sourcePreferences
         .stateIn(viewModelScope, SharingStarted.Eagerly, SourcePreferences())

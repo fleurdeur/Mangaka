@@ -48,7 +48,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -129,6 +132,8 @@ fun BrowseScreen(
             },
             singleLine = true,
             shape = RoundedCornerShape(18.dp),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
         )
 
         LazyRow(
@@ -188,12 +193,14 @@ fun BrowseScreen(
                             }
                         }
                     }
-                    item {
-                        TextButton(
-                            onClick = { viewModel.loadMore() },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            if (state.loadingMore) CircularProgressIndicator(Modifier.size(18.dp)) else Text("Load more")
+                    if (!state.searchAllSources) {
+                        item {
+                            TextButton(
+                                onClick = { viewModel.loadMore() },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                if (state.loadingMore) CircularProgressIndicator(Modifier.size(18.dp)) else Text("Load more")
+                            }
                         }
                     }
                 }

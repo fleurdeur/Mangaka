@@ -73,7 +73,7 @@ data class ReadingLightSchedule(
 
 @Serializable
 data class AnimatedChapterSettings(
-    val enabled: Boolean = false,
+    val enabled: Boolean = true,
     val autoPrecompute: Boolean = true,
     val quality: AnimationQuality = AnimationQuality.BALANCED,
     val intensity: MotionIntensity = MotionIntensity.CINEMATIC,
@@ -134,7 +134,9 @@ data class AppSettings(
     val crashReportsEnabled: Boolean = false,
     val analyticsEnabled: Boolean = false,
     val challengeHandlingEnabled: Boolean = true,
-    val dohEnabled: Boolean = true,
+    // System DNS is the safest default. Kurenai still falls back to DoH when
+    // the system resolver fails, so turning this on is an explicit privacy choice.
+    val dohEnabled: Boolean = false,
     val proxy: ProxySettings = ProxySettings(),
     val downloadConcurrency: Int = 3,
     val imageCacheMb: Int = 512,

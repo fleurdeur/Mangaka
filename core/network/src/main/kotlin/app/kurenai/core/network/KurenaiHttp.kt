@@ -16,12 +16,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.Authenticator
+import okhttp3.Cache
 import okhttp3.Credentials
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.dnsoverhttps.DnsOverHttps
+import java.io.File
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
@@ -82,18 +85,24 @@ class KurenaiHttp @Inject constructor(
         .writeTimeout(45, TimeUnit.SECONDS)
         .callTimeout(90, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        .cache(Cache(File(context.cacheDir, "http_cache"), 96L * 1024L * 1024L))
         .cookieJar(cookieJar)
         .followRedirects(true)
         .followSslRedirects(true)
         .addInterceptor { chain ->
             val ua = chain.request().header("User-Agent") ?: CHROME_UA
-            chain.proceed(
-                chain.request().newBuilder()
-                    .header("User-Agent", ua)
-                    .header("Accept-Language", "en-US,en;q=0.9,ja;q=0.8,ko;q=0.7,zh;q=0.6")
-                    .header("Accept", chain.request().header("Accept") ?: "*/*")
-                    .build(),
-            )
+            val builder = chain.request().newBuilder()
+                .header("User-Agent", ua)
+                .header("Accept-Language", "en-US,en;q=0.9,ja;q=0.8,ko;q=0.7,zh;q=0.6")
+                .header("Accept", chain.request().header("Accept") ?: "*/*")
+            if (ua.contains("Chrome/")) {
+                // Keep the client hints consistent with the Chromium user agent.
+                // Missing/contradictory hints are a common bot signal.
+                builder.header("sec-ch-ua", "\"Chromium\";v=\"141\", \"Not?A_Brand\";v=\"24\"")
+                builder.header("sec-ch-ua-mobile", "?1")
+                builder.header("sec-ch-ua-platform", "\"Android\"")
+            }
+            chain.proceed(builder.build())
         }
         .addInterceptor(PoliteRateLimitInterceptor())
         .addInterceptor(
@@ -111,7 +120,18 @@ class KurenaiHttp @Inject constructor(
     @Volatile
     private var client: OkHttpClient = baseBuilder.build()
 
+    private val dohProviders: List<Dns> by lazy {
+        listOf(
+            dnsOverHttps("https://cloudflare-dns.com/dns-query", "1.1.1.1", "1.0.0.1"),
+            dnsOverHttps("https://dns.google/dns-query", "8.8.8.8", "8.8.4.4"),
+        )
+    }
+
     init {
+        // Build once with the current settings. Without this first build the
+        // DataStore flow only rebuilt on a *change*, so the saved DoH/proxy
+        // choice was silently ignored until the user toggled it.
+        client = buildClient(settings)
         scope.launch {
             settingsStore.settings.collect { updated ->
                 val rebuild = settings.proxy != updated.proxy ||
@@ -133,13 +153,9 @@ class KurenaiHttp @Inject constructor(
         if (passed) challengeCache.markPassed(host)
     }
 
-    private fun rebuildClient(settings: AppSettings) {
+    private fun buildClient(settings: AppSettings): OkHttpClient {
         val builder = baseBuilder
-        if (settings.dohEnabled) {
-            builder.dns(dohDns())
-        } else {
-            builder.dns(Dns.SYSTEM)
-        }
+        builder.dns(ResilientDns(preferEncrypted = settings.dohEnabled, encrypted = dohProviders))
         if (settings.proxy.enabled) {
             builder.proxy(settings.proxy.asProxy())
             builder.proxyAuthenticator(settings.proxy.authenticator())
@@ -147,18 +163,26 @@ class KurenaiHttp @Inject constructor(
             builder.proxy(null)
             builder.proxyAuthenticator(Authenticator.NONE)
         }
-        client = builder.build()
-        NetworkLog.debug("http", "client rebuilt (doh=${settings.dohEnabled}, proxy=${settings.proxy.enabled})")
+        NetworkLog.debug("http", "client built (doh=${settings.dohEnabled}, proxy=${settings.proxy.enabled})")
+        return builder.build()
     }
 
-    private fun dohDns(): Dns {
+    private fun rebuildClient(settings: AppSettings) {
+        client = buildClient(settings)
+    }
+
+    private fun dnsOverHttps(endpoint: String, vararg bootstrapIps: String): Dns {
         val bootstrap = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.SECONDS)
+            .callTimeout(4, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
         return DnsOverHttps.Builder()
             .client(bootstrap)
-            .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
+            .url(endpoint.toHttpUrl())
             .includeIPv6(true)
+            .bootstrapDnsHosts(bootstrapIps.map { InetAddress.getByName(it) })
             .build()
     }
 

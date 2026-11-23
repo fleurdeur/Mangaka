@@ -1,16 +1,23 @@
 package app.kurenai.ui.onboarding
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -62,20 +70,65 @@ fun OnboardingScreen(
     var amoled by remember { mutableStateOf(false) }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize().padding(24.dp)) {
-            LinearProgressIndicator(progress = { (state.step + 1) / 4f }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)))
-            Spacer(Modifier.height(20.dp))
-            when (state.step) {
-                0 -> WelcomeStep(state.accepted) { viewModel.setAccepted(it) }
-                1 -> SourceStep(state, viewModel)
-                2 -> ThemeStep(themeMode, palette, dynamic, amoled, { themeMode = it }, { palette = it }, { dynamic = it }, { amoled = it })
-                else -> FinishStep(state, viewModel, themeMode, palette, dynamic, amoled, settingsViewModel, onFinished)
-            }
-            Spacer(Modifier.weight(1f))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                if (state.step > 0) OutlinedButton(onClick = viewModel::back) { Text("Back") } else Spacer(Modifier.width(1.dp))
-                if (state.step < 3) {
-                    Button(onClick = viewModel::next, enabled = state.step != 0 || state.accepted) { Text("Continue") }
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.18f),
+                        MaterialTheme.colorScheme.background,
+                    ),
+                ),
+            ),
+        ) {
+            Column(
+                Modifier.fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(38.dp).clip(RoundedCornerShape(13.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(21.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Kurenai", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Step ${state.step + 1} of 4", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(
+                        listOf("Welcome", "Sources", "Look", "Ready")[state.step],
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.height(18.dp))
+                LinearProgressIndicator(
+                    progress = { (state.step + 1) / 4f },
+                    modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                )
+                Spacer(Modifier.height(22.dp))
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    when (state.step) {
+                        0 -> WelcomeStep(state.accepted) { viewModel.setAccepted(it) }
+                        1 -> SourceStep(state, viewModel)
+                        2 -> ThemeStep(themeMode, palette, dynamic, amoled, { themeMode = it }, { palette = it }, { dynamic = it }, { amoled = it })
+                        else -> FinishStep(state, viewModel, themeMode, palette, dynamic, amoled, settingsViewModel, onFinished)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    if (state.step > 0) {
+                        OutlinedButton(onClick = viewModel::back) { Text("Back") }
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+                    if (state.step < 3) {
+                        Button(onClick = viewModel::next, enabled = state.step != 0 || state.accepted) { Text("Continue") }
+                    }
                 }
             }
         }
@@ -84,7 +137,7 @@ fun OnboardingScreen(
 
 @Composable
 private fun WelcomeStep(accepted: Boolean, onAccepted: (Boolean) -> Unit) {
-    Column {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.height(56.dp))
         Spacer(Modifier.height(12.dp))
         Text("Welcome to Kurenai", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
@@ -118,7 +171,7 @@ private fun WelcomeStep(accepted: Boolean, onAccepted: (Boolean) -> Unit) {
 
 @Composable
 private fun SourceStep(state: OnboardingUiState, viewModel: OnboardingViewModel) {
-    Column {
+    Column(Modifier.fillMaxSize()) {
         Text("Pick your sources", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
             "All ${state.sources.size} built-in parsers ship with Kurenai. We enabled sources for your system language (${state.systemLanguage.uppercase()}); you can change this any time.",
@@ -167,7 +220,7 @@ private fun ThemeStep(
     onDynamic: (Boolean) -> Unit,
     onAmoled: (Boolean) -> Unit,
 ) {
-    Column {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Icon(Icons.Rounded.Palette, null, tint = MaterialTheme.colorScheme.primary)
         Text("Make it yours", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text("Kurenai uses Material 3 Expressive with a warm coffee base and a crimson accent. Monet colors are on by default.", style = MaterialTheme.typography.bodyMedium)
@@ -200,7 +253,7 @@ private fun FinishStep(
     settingsViewModel: AppShellViewModel,
     onFinished: () -> Unit,
 ) {
-    Column {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Icon(Icons.Rounded.Security, null, tint = MaterialTheme.colorScheme.primary)
         Text("Ready when you are", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(

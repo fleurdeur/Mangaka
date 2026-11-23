@@ -9,6 +9,7 @@ android {
 dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:source"))
+    implementation(project(":feature:translation"))
     implementation(libs.androidx.paging.compose)
     implementation(libs.androidx.paging.runtime)
     implementation(libs.androidx.media3.session)

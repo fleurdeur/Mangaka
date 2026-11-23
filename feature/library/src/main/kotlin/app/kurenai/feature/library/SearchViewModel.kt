@@ -4,12 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.kurenai.core.data.MangaRepository
 import app.kurenai.core.data.SearchRepository
-import app.kurenai.core.data.SourceRepository
 import app.kurenai.core.model.Manga
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -18,7 +18,6 @@ import javax.inject.Inject
 class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
     private val mangaRepository: MangaRepository,
-    private val sourceRepository: SourceRepository,
 ) : ViewModel() {
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -28,6 +27,7 @@ class SearchViewModel @Inject constructor(
     val recent: StateFlow<List<String>> = _recent.asStateFlow()
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
+    private var searchJob: Job? = null
 
     init {
         viewModelScope.launch { _recent.value = searchRepository.recentQueries.first() }
@@ -38,17 +38,23 @@ class SearchViewModel @Inject constructor(
     fun search(includeSources: Boolean = false) {
         val q = _query.value.trim()
         if (q.isBlank()) return
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _searching.value = true
-            _results.value = searchRepository.search(q).first()
+            val local = searchRepository.search(q).first()
+            _results.value = local
             searchRepository.remember(q)
             if (includeSources) {
-                val visible = sourceRepository.visibleSources().take(12)
-                val remote = visible.flatMap { source ->
-                    runCatching { source.search(app.kurenai.core.model.SearchFilters(query = q), 0, 12) }.getOrDefault(emptyList())
+                val remote = mutableListOf<Manga>()
+                val filters = app.kurenai.core.model.SearchFilters(query = q)
+                // Results arrive source-by-source, so the grid fills in while
+                // slower parsers are still working instead of freezing for 15s.
+                mangaRepository.searchAll(filters, limitPerSource = 16, maxSources = 24).collect { chunk ->
+                    if (chunk.results.isEmpty()) return@collect
+                    remote += chunk.results
+                    _results.value = (local + remote).distinctBy { it.id }
+                    chunk.results.forEach { mangaRepository.persist(it) }
                 }
-                _results.value = (_results.value + remote).distinctBy { it.id }
-                remote.forEach { mangaRepository.persist(it) }
             }
             _searching.value = false
             _recent.value = searchRepository.recentQueries.first()
